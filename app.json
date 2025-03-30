@@ -1,0 +1,55 @@
+{
+  "expo": {
+    "name": "BizPlan",
+    "slug": "bizplan",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/splash-icon.png",
+    "scheme": "bizplan",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "backgroundColor": "#0a1b1f"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "icon": "./assets/images/ios-icon.png",
+      "infoPlist": {
+        "UIStatusBarStyle": "UIStatusBarStyleLightContent"
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/android-icon.png",
+        "backgroundColor": "#0a1b1f"
+      },
+      "package": "com.bizplan.bizplan"
+    },
+    "androidStatusBar": {
+      "backgroundColor": "#02b078",
+      "barStyle": "light-content"
+    },
+    "androidNavigationBar": {
+      "backgroundColor": "#0a1b1f",
+      "barStyle": "light-content"
+    },
+    "plugins": [
+      "expo-router"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "a4d7a945-1428-4c9c-8224-4279419f3d27"
+      }
+    },
+    "owner": "raf_avetyan"
+  }
+}
