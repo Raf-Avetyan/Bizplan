@@ -1,0 +1,5 @@
+{
+   "workbench.editor.decorations.colors": true,
+   "prisma.fileWatcher": true,
+   "prisma.pinToPrisma6": true
+}

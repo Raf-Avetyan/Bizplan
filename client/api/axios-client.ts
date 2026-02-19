@@ -1,0 +1,35 @@
+import axios, { AxiosResponse } from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { ApiResponse } from '@/types/business-plan.types';
+
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://172.20.10.2:3000/api';
+
+const axiosClient = axios.create({
+   baseURL: API_BASE_URL,
+   timeout: 10000,
+   headers: {
+      'Content-Type': 'application/json',
+   },
+});
+
+axiosClient.interceptors.request.use(
+   async (config) => {
+      const token = await AsyncStorage.getItem('auth_token');
+      if (token) {
+         config.headers.Authorization = `Bearer ${token}`;
+      }
+      return config;
+   },
+   (error) => Promise.reject(error)
+);
+
+axiosClient.interceptors.response.use(
+   (response: AxiosResponse) => response.data,
+   (error) => {
+      if (error.response?.status === 401) { }
+      return Promise.reject(error.response?.data || error.message);
+   }
+);
+
+
+export default axiosClient;
