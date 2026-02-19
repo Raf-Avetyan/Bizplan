@@ -5,8 +5,10 @@
 
 # Build files
 client/dist/
+client/bun.lock/
 client/build/
 server/dist/
+server/yarn.lock/
 
 # Environment files
 .env
