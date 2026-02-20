@@ -2,7 +2,7 @@ import axios, { AxiosResponse } from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ApiResponse } from '@/types/business-plan.types';
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://172.20.10.2:3000/api';
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 
 const axiosClient = axios.create({
    baseURL: API_BASE_URL,
@@ -30,6 +30,7 @@ axiosClient.interceptors.response.use(
       return Promise.reject(error.response?.data || error.message);
    }
 );
+
 
 
 export default axiosClient;
