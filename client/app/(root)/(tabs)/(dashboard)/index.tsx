@@ -3,21 +3,35 @@ import {
   View,
   TouchableWithoutFeedback,
   ScrollView,
+  RefreshControl,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import React, { useState } from "react";
+import React, { useState, useCallback } from "react";
 import Menu from "./components/Menu/Menu";
 import { LinearGradient } from "expo-linear-gradient";
 import { X, AlignJustify } from 'lucide-react-native';
 import { Text } from 'react-native';
 import Content from './components/Content';
 import LottieLoading from '@/components/ui/LottieLoading/LottieLoading';
-import { useActiveCompany } from '@/hooks/useCompanyQueries';
+import LottieView from 'lottie-react-native';
+import { useActiveCompany, useCompanyAdditionalData } from '@/hooks/useCompanyQueries';
 
 export default function DashboardScreen() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const { data: activeCompany, isLoading } = useActiveCompany();
+  const { data: activeCompany, isLoading, refetch } = useActiveCompany();
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await refetch();
+    } catch (error) {
+      console.error("Error refreshing data:", error);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refetch]);
 
   return (
     <>
@@ -30,6 +44,7 @@ export default function DashboardScreen() {
             isLoading={isLoading}
             lottieURL={{ loading: require("@/assets/lottie/spinner.json") }}
           />
+
           <TouchableOpacity
             onPress={() => setIsMenuOpen(!isMenuOpen)}
             className="left-[10px] top-[-10px] z-[2500]"
@@ -69,6 +84,15 @@ export default function DashboardScreen() {
 
           <ScrollView
             className="flex-1 px-4"
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor="transparent"
+                colors={["transparent"]}
+                progressBackgroundColor="transparent"
+              />
+            }
           >
             {activeCompany ? (
               <Content companyData={activeCompany} />

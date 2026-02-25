@@ -9,6 +9,8 @@ export type Company = {
    idea: string;
    additionalData?: CompanyAdditionalDataDto;
    financialData?: CompanyFinancialDataDto;
+   createdAt: string,
+   updatedAt: string,
 }
 
 export type CreateCompanyDto = {

@@ -35,7 +35,7 @@ export default function TabsLayout() {
         </NativeTabs.Trigger>
 
         <NativeTabs.Trigger name="search" role='search'>
-          <Icon sf="globe" drawable="ic_search" />
+          <Icon sf="dot.radiowaves.left.and.right" drawable="ic_search" />
         </NativeTabs.Trigger>
       </NativeTabs>
     );

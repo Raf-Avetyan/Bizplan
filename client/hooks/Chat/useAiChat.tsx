@@ -3,7 +3,7 @@ import { Message } from "@/components/chat/types";
 import { GoogleGenAI } from "@google/genai";
 
 const ai = new GoogleGenAI({
-  apiKey: "AIzaSyAM7yXm1NCYgmeLaWpJS30OiZN7Ey6fn64",
+  apiKey: process.env.EXPO_PUBLIC_GOOGLEAI_API_KEY,
 });
 
 export const useAiChat = ({ history }: { history: Message[] }) => {

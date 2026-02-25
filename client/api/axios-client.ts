@@ -1,6 +1,5 @@
 import axios, { AxiosResponse } from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { ApiResponse } from '@/types/business-plan.types';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 

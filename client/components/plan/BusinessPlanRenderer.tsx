@@ -152,7 +152,7 @@ const BusinessPlanRenderer = forwardRef<ScrollView, BusinessPlanRendererProps>((
    const [lastClickedPage, setLastClickedPage] = useState<number | null>(null);
 
    const [loadedSections, setLoadedSections] = useState<{ [key: string]: number }>({});
-   const [isLoadingMore, setIsLoadingMore] = useState(false);
+   const [loadingSections, setLoadingSections] = useState<{ [key: string]: boolean }>({});
 
    const handlePagePress = (pageNumber: number) => {
       if (isNavigating || lastClickedPage === pageNumber) {
@@ -171,19 +171,25 @@ const BusinessPlanRenderer = forwardRef<ScrollView, BusinessPlanRendererProps>((
    };
 
    const handleLoadMore = (sectionId: string, totalPages: number) => {
-      if (isLoadingMore) return;
+      if (loadingSections[sectionId]) return;
 
-      setIsLoadingMore(true);
+      setLoadingSections(prev => ({
+         ...prev,
+         [sectionId]: true
+      }));
 
       setTimeout(() => {
          setLoadedSections(prev => ({
             ...prev,
             [sectionId]: totalPages
          }));
-         setIsLoadingMore(false);
+
+         setLoadingSections(prev => ({
+            ...prev,
+            [sectionId]: false
+         }));
       }, 500);
    };
-
 
    const renderPages = () => {
       if (!businessPlan.presentation?.sections || !businessPlan.presentation?.pages) return [];
@@ -197,6 +203,7 @@ const BusinessPlanRenderer = forwardRef<ScrollView, BusinessPlanRendererProps>((
          const visiblePages = sectionPages.slice(0, loadedCount);
          const hasMore = sectionPages.length > loadedCount;
          const remainingCount = sectionPages.length - loadedCount;
+         const isLoadingThisSection = loadingSections[section.id] || false;
 
          if (visiblePages.length === 0) return null;
 
@@ -324,11 +331,11 @@ const BusinessPlanRenderer = forwardRef<ScrollView, BusinessPlanRendererProps>((
 
                   {hasMore && (
                      <TouchableOpacity
-                        style={styles.loadMoreButton}
+                        style={[styles.loadMoreButton, isLoadingThisSection && styles.loadMoreButtonLoading]}
                         onPress={() => handleLoadMore(section.id, sectionPages.length)}
-                        disabled={isLoadingMore}
+                        disabled={isLoadingThisSection}
                      >
-                        {isLoadingMore ? (
+                        {isLoadingThisSection ? (
                            <ActivityIndicator size="small" color="white" />
                         ) : (
                            <>
@@ -689,6 +696,9 @@ const styles = StyleSheet.create({
       color: 'rgba(255,255,255,0.5)',
       fontSize: 12,
       marginTop: 4,
+   },
+   loadMoreButtonLoading: {
+      opacity: 0.7,
    },
 });
 

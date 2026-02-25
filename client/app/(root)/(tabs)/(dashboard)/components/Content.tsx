@@ -5,16 +5,16 @@ import {
   Text,
   TouchableOpacity,
   View,
-  StyleSheet
+  StyleSheet,
+  RefreshControl
 } from "react-native";
 import { useAiChat } from "@/hooks/Chat/useAiChat";
 import { tableOfContents } from '../../../../../components/plan/BusinessPlanRenderer';
 import { ViewStyle, TextStyle } from 'react-native';
 import { useActiveCompany, useAddBusinessPlan, useCompanyAdditionalData } from '@/hooks/useCompanyQueries';
 import { Company, CompanyAdditionalDataDto } from '@/types/company.types';
-import LottieView from 'lottie-react-native';
-import CoverPage from './business-plan-pages/CoverPage';
-import { router } from 'expo-router';
+import Card from './Card/Card';
+import { cardData, CardDataItem } from '@/constants/DashboardCardData';
 
 type ContentProps = {
   companyData: Company;
@@ -66,7 +66,7 @@ export interface TableOfContentsItem {
 
 export interface BusinessPlanSections {
   id: string,
-  title: string
+  title: string,
 }
 
 const Content = ({ companyData }: ContentProps) => {
@@ -9354,41 +9354,14 @@ const Content = ({ companyData }: ContentProps) => {
       <View style={styles.container}>
         <ScrollView>
           <View style={styles.cardsGrid}>
-            {Array.from({ length: 6 }).map((_, index) => (
-              <TouchableOpacity style={styles.card} key={index} onPress={() =>
-                router.push("/(root)/(tabs)/plan")
-              }>
-                <View style={styles.cardTop}>
-                  <View style={styles.pageWrapper}>
-                    <View style={styles.pageContainer}>
-                      <View style={styles.page}>
-                        <CoverPage company={companyData} size='small' />
-                      </View>
-                    </View>
-                    <View style={[styles.page, styles.backPageOne]}></View>
-                    <View style={[styles.page, styles.backPageTwo]}></View>
-                  </View>
-                  {/* <Image source={require("@/assets/images/financials-thumb.png")} style={{ height: "100%", width: "100%", borderRadius: 8 }} /> */}
-                </View>
-                <View style={styles.cardBottom}>
-                  <View>
-                    <Text style={styles.cardBottomTitle}>Business Plan</Text>
-                    <Text style={styles.cardBottomDesc}>Secure funding and impress partners</Text>
-                  </View>
-
-                  {(isCreatingBizPlan || addBusinessPlan.isPending) && (
-                    <View style={styles.cardLoadingContainer}>
-                      <LottieView
-                        source={require("@/assets/lottie/simple-loading.json")}
-                        autoPlay
-                        loop
-                        style={{ width: 20, height: 20 }}
-                      />
-                      <Text style={{ color: "white" }}>Generating</Text>
-                    </View>
-                  )}
-                </View>
-              </TouchableOpacity>
+            {cardData.map((data) => (
+              <Card
+                key={data.id}
+                addBusinessPlan={addBusinessPlan}
+                data={data as CardDataItem}
+                companyData={companyData}
+                isCreatingBizPlan={isCreatingBizPlan}
+              />
             ))}
           </View>
         </ScrollView>
@@ -9539,36 +9512,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     padding: 10
-  },
-  cardTop: {
-    borderColor: "rgba(255, 255, 255, .1)",
-    borderWidth: 1,
-    backgroundColor: "rgba(255, 255, 255, .03)",
-    display: "flex",
-    alignItems: "center",
-    padding: 6,
-    borderRadius: 12,
-    height: 120,
-  },
-  cardBottom: {
-    paddingTop: 8,
-    display: "flex",
-    gap: 8
-  },
-  cardBottomTitle: {
-    color: "white"
-  },
-  cardBottomDesc: {
-    color: "rgba(255, 255, 255, .5)"
-  },
-  cardLoadingContainer: {
-    display: "flex",
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 6
-  },
-  card: {
-    width: "48%"
   }
 });
 
