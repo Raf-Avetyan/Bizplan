@@ -13,3 +13,5 @@ server/yarn.lock
 # Environment files
 .env
 .env.local
+client/.env
+server/.env
