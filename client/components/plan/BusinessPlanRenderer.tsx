@@ -6,13 +6,15 @@ import {
    ScrollView,
    TouchableOpacity,
    ActivityIndicator,
+   Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BusinessPlanTemplate } from '@/types/business-plan.types';
 import { Page, PageBlock } from '@/app/(root)/(tabs)/(dashboard)/components/Content';
 import CoverPage from '@/app/(root)/(tabs)/(dashboard)/components/business-plan-pages/CoverPage';
 import { useActiveCompany } from '@/hooks/useCompanyQueries';
-import LottieView from 'lottie-react-native';
+import { MotiView } from 'moti';
+import { Image as LucideImage } from 'lucide-react-native';
 
 type BusinessPlanRendererProps = {
    businessPlan: BusinessPlanTemplate;
@@ -121,11 +123,28 @@ export const renderBlockContent = (block: PageBlock, key: number) => {
       case 'divider':
          return <View style={[styles.divider, block.styles]} key={key} />;
       case 'image':
+         const hasImage = typeof block.content === 'string' && (
+            block.content.startsWith('http') ||
+            block.content.startsWith('file') ||
+            block.content.startsWith('content') ||
+            block.content.startsWith('data:image')
+         );
          return (
-            <View style={[styles.imageContainer, block.styles]} key={key}>
-               <Text style={styles.imageText}>
-                  {typeof block.content === 'string' ? block.content : 'Image'}
-               </Text>
+            <View style={[styles.imageContainer, block.styles, { height: block.styles?.height || 200, padding: 0 }]} key={key}>
+               {hasImage ? (
+                  <Image
+                     source={{ uri: block.content as string }}
+                     style={[styles.blockImage, { width: '100%', height: '100%' }]}
+                     resizeMode="cover"
+                  />
+               ) : (
+                  <View style={styles.imagePlaceholder}>
+                     <LucideImage size={48} color="#ccc" />
+                     <Text style={styles.imageText}>
+                        {typeof block.content === 'string' ? block.content : 'Image'}
+                     </Text>
+                  </View>
+               )}
             </View>
          );
       default:
@@ -329,27 +348,47 @@ const BusinessPlanRenderer = forwardRef<ScrollView, BusinessPlanRendererProps>((
                      )
                   })}
 
-                  {hasMore && (
+                  {isLoadingThisSection && (
+                     Array.from({ length: remainingCount }).map((_, index) => (
+                        <MotiView
+                           key={`skeleton-${index}`}
+                           from={{ opacity: 0.3 }}
+                           animate={{ opacity: 0.6 }}
+                           transition={{
+                              type: 'timing',
+                              duration: 1000,
+                              loop: true,
+                              delay: index * 100,
+                           }}
+                           style={styles.pageSkeletonWrapper}
+                        >
+                           <View style={styles.pageSkeleton}>
+                              <View style={styles.skeletonTitle} />
+                              <View style={styles.skeletonContent}>
+                                 <View style={styles.skeletonLine} />
+                                 <View style={styles.skeletonLineShort} />
+                                 <View style={[styles.skeletonLine, { marginTop: 20 }]} />
+                                 <View style={styles.skeletonLine} />
+                                 <View style={styles.skeletonLineShort} />
+                              </View>
+                           </View>
+                        </MotiView>
+                     ))
+                  )}
+
+                  {hasMore && !isLoadingThisSection && (
                      <TouchableOpacity
-                        style={[styles.loadMoreButton, isLoadingThisSection && styles.loadMoreButtonLoading]}
+                        style={styles.loadMoreButton}
                         onPress={() => handleLoadMore(section.id, sectionPages.length)}
-                        disabled={isLoadingThisSection}
                      >
-                        {isLoadingThisSection ? (
-                           <ActivityIndicator size="small" color="white" />
-                        ) : (
-                           <>
-                              <Text style={styles.loadMoreText}>
-                                 Load {remainingCount} More {remainingCount === 1 ? 'Page' : 'Pages'}
-                              </Text>
-                              <Text style={styles.loadMoreSubtext}>
-                                 Show all {sectionPages.length} pages
-                              </Text>
-                           </>
-                        )}
+                        <Text style={styles.loadMoreText}>
+                           Load {remainingCount} More {remainingCount === 1 ? 'Page' : 'Pages'}
+                        </Text>
+                        <Text style={styles.loadMoreSubtext}>
+                           Show all {sectionPages.length} pages
+                        </Text>
                      </TouchableOpacity>
-                  )
-                  }
+                  )}
                </View >
             </View >
          );
@@ -665,8 +704,15 @@ const styles = StyleSheet.create({
       alignItems: 'center',
       backgroundColor: '#f0f0f0',
       borderRadius: 8,
-      padding: 20,
       marginVertical: 15,
+      overflow: 'hidden',
+   },
+   blockImage: {
+      borderRadius: 8,
+   },
+   imagePlaceholder: {
+      alignItems: 'center',
+      padding: 20,
    },
    imageText: {
       fontSize: 16,
@@ -699,6 +745,43 @@ const styles = StyleSheet.create({
    },
    loadMoreButtonLoading: {
       opacity: 0.7,
+   },
+   pageSkeletonWrapper: {
+      alignItems: 'center',
+      marginBottom: 20,
+   },
+   pageSkeleton: {
+      width: '90%',
+      height: 480,
+      backgroundColor: 'rgba(255, 255, 255, 0.1)',
+      borderRadius: 18,
+      padding: 20,
+      borderWidth: 2,
+      borderColor: 'rgba(255, 255, 255, 0.1)',
+   },
+   skeletonTitle: {
+      height: 24,
+      width: '60%',
+      backgroundColor: 'rgba(255, 255, 255, 0.1)',
+      borderRadius: 6,
+      marginBottom: 20,
+   },
+   skeletonContent: {
+      flex: 1,
+   },
+   skeletonLine: {
+      height: 12,
+      width: '100%',
+      backgroundColor: 'rgba(255, 255, 255, 0.05)',
+      borderRadius: 4,
+      marginBottom: 10,
+   },
+   skeletonLineShort: {
+      height: 12,
+      width: '80%',
+      backgroundColor: 'rgba(255, 255, 255, 0.05)',
+      borderRadius: 4,
+      marginBottom: 10,
    },
 });
 

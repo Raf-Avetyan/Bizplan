@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
 import LottieView from "lottie-react-native";
-import { Text, TouchableOpacity, View, TextInput, Alert } from "react-native";
+import { Text, TouchableOpacity, View, TextInput } from "react-native";
 import React, { useState, useEffect } from "react";
 import * as jwtDecode from "jwt-decode";
 import { MotiText, MotiView } from "moti";
@@ -9,6 +9,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { ScrollView } from 'react-native-gesture-handler';
 import axiosClient from "@/api/axios-client";
 import { UserProfile, UserWithPlans } from '@/types/auth.types';
+import { useToast } from '@/components/ui/Toast/Toast';
 
 export default function Profile() {
   const router = useRouter();
@@ -19,6 +20,7 @@ export default function Profile() {
   const [userId, setUserId] = useState("");
   const [isUpdating, setIsUpdating] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const toast = useToast();
 
   const handleLogout = async () => {
     await AsyncStorage.removeItem("auth_token");
@@ -45,25 +47,12 @@ export default function Profile() {
       console.error("Fetch profile error:", error);
 
       if (error?.status === 401 || error?.message?.includes("Unauthorized")) {
-        Alert.alert("Session Expired", "Please login again to continue");
+        toast.showToast("Session Expired", "Please login again to continue", "warning");
         handleLogout();
         return;
       }
 
-      Alert.alert(
-        "Error",
-        error?.message || "Failed to fetch profile",
-        [
-          {
-            text: "Retry",
-            onPress: fetchUserProfile,
-          },
-          {
-            text: "Logout",
-            onPress: handleLogout,
-          },
-        ],
-      );
+      toast.showToast("Error", error?.message || "Failed to fetch profile", "error");
     } finally {
       setIsLoading(false);
     }
@@ -78,20 +67,17 @@ export default function Profile() {
       setName(updatedUser.name);
       setIsEditing(false);
 
-      Alert.alert("Success", "Profile updated successfully");
+      toast.showToast("Success", "Profile updated successfully", "success");
     } catch (error: any) {
       console.error("Update error:", error);
 
       if (error?.status === 401 || error?.message?.includes("Unauthorized")) {
-        Alert.alert("Session Expired", "Please login again to continue");
+        toast.showToast("Session Expired", "Please login again to continue", "warning");
         handleLogout();
         return;
       }
 
-      Alert.alert(
-        "Error",
-        error?.message || "Failed to update name",
-      );
+      toast.showToast("Error", error?.message || "Failed to update name", "error");
     } finally {
       setIsUpdating(false);
     }
@@ -111,7 +97,7 @@ export default function Profile() {
         const token = await AsyncStorage.getItem("auth_token");
 
         if (!token) {
-          Alert.alert("Authentication Error", "Please login to access your profile");
+          toast.showToast("Authentication Error", "Please login to access your profile", "error");
           router.replace("/(auth)/auth");
           return;
         }
@@ -120,7 +106,7 @@ export default function Profile() {
 
       } catch (error) {
         console.error("Init profile error:", error);
-        Alert.alert("Error", "Failed to initialize profile");
+        toast.showToast("Error", "Failed to initialize profile", "error");
       }
     }
 
@@ -130,8 +116,11 @@ export default function Profile() {
   return (
     <View className="h-full flex bg-[#4D2FB2]">
       <LinearGradient
-        colors={["#4D2FB2", "rgba(0,0,0,0.6)"]}
+        colors={["#4D2FB2", "#2B1A66", "#050510"]}
         style={{ flex: 1 }}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        locations={[0, 0.6, 1]}
       >
         <ScrollView>
           <View className="flex items-center flex-col pt-14">

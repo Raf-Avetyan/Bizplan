@@ -11,7 +11,19 @@ import {
 } from "react-native";
 import { MotiView } from "moti";
 import { LinearGradient } from "expo-linear-gradient";
-import { Ionicons } from "@expo/vector-icons";
+import {
+  Bell,
+  BarChart2,
+  TrendingUp,
+  ShieldCheck,
+  Banknote,
+  Users,
+  PlusCircle,
+  FileText,
+  Clock,
+  ArrowRight,
+  MessageCircle
+} from "lucide-react-native";
 import { useRouter } from "expo-router";
 
 export default function HomeScreen() {
@@ -20,8 +32,11 @@ export default function HomeScreen() {
   return (
     <MotiView style={styles.container}>
       <LinearGradient
-        colors={["#4D2FB2", "rgba(0,0,0,0.7)"]}
+        colors={["#4D2FB2", "#2B1A66", "#050510"]}
         style={styles.gradient}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        locations={[0, 0.6, 1]}
       >
         <View
           style={styles.safeArea}
@@ -32,7 +47,7 @@ export default function HomeScreen() {
               onPress={() => router.push("/(root)/(modals)/chat")}
             >
               <View style={styles.profileGradient}>
-                <Ionicons name="chatbubbles-outline" size={32} color="#ffffff" />
+                <MessageCircle size={28} color="#ffffff" />
               </View>
             </TouchableOpacity>
 
@@ -41,7 +56,7 @@ export default function HomeScreen() {
               onPress={() => router.push("/notifications")}
             >
               <View style={styles.profileGradient}>
-                <Ionicons name="notifications-outline" size={32} color="#ffffff" />
+                <Bell size={28} color="#ffffff" />
               </View>
             </TouchableOpacity>
           </View>
@@ -98,7 +113,7 @@ export default function HomeScreen() {
                     delay: 400,
                   }}
                 >
-                  <Ionicons name="analytics" size={24} color="#01a06d" />
+                  <BarChart2 size={24} color="#01a06d" />
                   <Text style={styles.featureText}>
                     Իրական ժամանակի վերլուծություն
                   </Text>
@@ -113,7 +128,7 @@ export default function HomeScreen() {
                     delay: 600,
                   }}
                 >
-                  <Ionicons name="trending-up" size={24} color="#01a06d" />
+                  <TrendingUp size={24} color="#01a06d" />
                   <Text style={styles.featureText}>Աճի հետևում</Text>
                 </MotiView>
                 <MotiView
@@ -126,8 +141,7 @@ export default function HomeScreen() {
                     delay: 800,
                   }}
                 >
-                  <Ionicons
-                    name="shield-checkmark"
+                  <ShieldCheck
                     size={24}
                     color="#01a06d"
                   />
@@ -159,7 +173,7 @@ export default function HomeScreen() {
                       colors={["#4CAF50", "#45a049"]}
                       style={styles.statGradient}
                     >
-                      <Ionicons name="cash" size={32} color="#ffffff" />
+                      <Banknote size={32} color="#ffffff" />
                       <Text style={styles.statValue}>$24.5K</Text>
                       <Text style={styles.statLabel}>Եկամուտ</Text>
                     </LinearGradient>
@@ -176,7 +190,7 @@ export default function HomeScreen() {
                         { backgroundColor: "royalblue" },
                       ]}
                     >
-                      <Ionicons name="people" size={32} color="#ffffff" />
+                      <Users size={32} color="#ffffff" />
                       <Text style={styles.statValue}>1.2K</Text>
                       <Text style={styles.statLabel}>Հաճախորդներ</Text>
                     </View>
@@ -204,7 +218,7 @@ export default function HomeScreen() {
                       colors={["#FF9800", "#F57C00"]}
                       style={styles.quickActionGradient}
                     >
-                      <Ionicons name="add-circle" size={24} color="#ffffff" />
+                      <PlusCircle size={24} color="#ffffff" />
                       <Text style={styles.quickActionText}>Նոր Պլան</Text>
                     </LinearGradient>
                   </TouchableOpacity>
@@ -213,8 +227,7 @@ export default function HomeScreen() {
                       colors={["#9C27B0", "#7B1FA2"]}
                       style={styles.quickActionGradient}
                     >
-                      <Ionicons
-                        name="document-text"
+                      <FileText
                         size={24}
                         color="#ffffff"
                       />
@@ -247,7 +260,7 @@ export default function HomeScreen() {
                     transition={{ delay: 1000 }}
                   >
                     <View style={styles.activityIcon}>
-                      <Ionicons name="time" size={24} color="#ffffff" />
+                      <Clock size={24} color="#ffffff" />
                     </View>
                     <Text style={styles.activityText}>
                       Վերջին մուտք՝ 2 ժամ առաջ
@@ -274,8 +287,7 @@ export default function HomeScreen() {
                     style={styles.buttonGradient}
                   >
                     <Text style={styles.buttonText}>Բացել Վահանակը</Text>
-                    <Ionicons
-                      name="arrow-forward"
+                    <ArrowRight
                       size={20}
                       color="#ffffff"
                       style={styles.buttonIcon}
@@ -487,6 +499,6 @@ const styles = StyleSheet.create({
   },
   profileGradient: {
     borderRadius: 20,
-    overflow: "hidden",
+    padding: 4
   },
 });

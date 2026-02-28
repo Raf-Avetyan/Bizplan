@@ -1,20 +1,20 @@
 import { useEffect, useState } from "react";
 import {
   ScrollView,
-  Alert,
   Text,
   TouchableOpacity,
   View,
   StyleSheet,
-  RefreshControl
 } from "react-native";
 import { useAiChat } from "@/hooks/Chat/useAiChat";
+import { MotiView } from 'moti';
 import { tableOfContents } from '../../../../../components/plan/BusinessPlanRenderer';
 import { ViewStyle, TextStyle } from 'react-native';
 import { useActiveCompany, useAddBusinessPlan, useCompanyAdditionalData } from '@/hooks/useCompanyQueries';
 import { Company, CompanyAdditionalDataDto } from '@/types/company.types';
 import Card from './Card/Card';
 import { cardData, CardDataItem } from '@/constants/DashboardCardData';
+import { useToast } from '@/components/ui/Toast/Toast';
 
 type ContentProps = {
   companyData: Company;
@@ -71,6 +71,7 @@ export interface BusinessPlanSections {
 
 const Content = ({ companyData }: ContentProps) => {
   const { businessName, idea, place, uniqueTags } = companyData;
+  const toast = useToast();
   const [isCreatingBizPlan, setIsCreatingBizPlan] = useState(false);
 
   const {
@@ -92,7 +93,6 @@ const Content = ({ companyData }: ContentProps) => {
     pages: Page[]
   } => {
     const pages: Page[] = [
-      // Document Section - Cover & TOC
       {
         id: 'cover',
         type: 'cover',
@@ -9240,9 +9240,9 @@ const Content = ({ companyData }: ContentProps) => {
     return text.trim();
   };
 
-  const generateBusinessPlan = async () => {
+  const generateBusinessPlan = async (retryCount = 0): Promise<void> => {
+    const MAX_RETRIES = 3;
     if (!activeCompany?.id) {
-      Alert.alert("Սխալ", "Չկա ակտիվ բիզնես պլան");
       return;
     }
     try {
@@ -9307,13 +9307,16 @@ const Content = ({ companyData }: ContentProps) => {
           data: companyAdditionalData.business_plan
         });
 
-        Alert.alert("Հաջողություն", "Ամբողջական բիզնես պլանը ստեղծված է");
+        toast.showToast("Հաջողություն", "Ամբողջական բիզնես պլանը ստեղծված է", "success");
       } else {
         throw new Error("Could not parse JSON response");
       }
     } catch (error) {
-      console.error("Error generating business plan:", error);
-      Alert.alert("Սխալ", "Չհաջողվեց ստեղծել բիզնես պլանը։ Խնդրում ենք փորձել կրկին։");
+      console.error("Error generating business plan (attempt " + (retryCount + 1) + "):", error);
+      if (retryCount < MAX_RETRIES - 1) {
+        setIsCreatingBizPlan(false);
+        return generateBusinessPlan(retryCount + 1);
+      }
     } finally {
       setIsCreatingBizPlan(false);
     }
@@ -9330,8 +9333,47 @@ const Content = ({ companyData }: ContentProps) => {
   const renderContent = () => {
     if (isActiveCompanyDataLoading || isAdditionalDataLoading) {
       return (
-        <View style={styles.loadingContainer}>
-          <Text style={styles.loadingText}>Բեռնվում է...</Text>
+        <View style={styles.container}>
+          <ScrollView>
+            <View style={styles.cardsGrid}>
+              {[1, 2, 3, 4, 5, 6].map((i) => (
+                <View key={i} style={styles.cardSkeleton}>
+                  <MotiView
+                    from={{ opacity: 0.3 }}
+                    animate={{ opacity: 0.6 }}
+                    transition={{
+                      type: 'timing',
+                      duration: 1000,
+                      loop: true,
+                    }}
+                    style={styles.cardTopSkeleton}
+                  />
+                  <View style={styles.cardBottomSkeleton}>
+                    <MotiView
+                      from={{ opacity: 0.3 }}
+                      animate={{ opacity: 0.6 }}
+                      transition={{
+                        type: 'timing',
+                        duration: 1000,
+                        loop: true,
+                      }}
+                      style={styles.titleSkeleton}
+                    />
+                    <MotiView
+                      from={{ opacity: 0.2 }}
+                      animate={{ opacity: 0.4 }}
+                      transition={{
+                        type: 'timing',
+                        duration: 1000,
+                        loop: true,
+                      }}
+                      style={styles.descSkeleton}
+                    />
+                  </View>
+                </View>
+              ))}
+            </View>
+          </ScrollView>
         </View>
       );
     }
@@ -9512,7 +9554,33 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     padding: 10
-  }
+  },
+  cardSkeleton: {
+    width: "48%",
+    marginBottom: 16,
+  },
+  cardTopSkeleton: {
+    height: 120,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    borderRadius: 12,
+  },
+  cardBottomSkeleton: {
+    paddingTop: 8,
+    paddingLeft: 2,
+  },
+  titleSkeleton: {
+    height: 14,
+    width: "70%",
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    borderRadius: 4,
+    marginBottom: 6,
+  },
+  descSkeleton: {
+    height: 10,
+    width: "90%",
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    borderRadius: 4,
+  },
 });
 
 export default Content;

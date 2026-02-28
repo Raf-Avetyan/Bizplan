@@ -1,6 +1,7 @@
 import { router } from 'expo-router';
 import LottieView from 'lottie-react-native';
 import { Image, Text, TouchableOpacity, View } from 'react-native';
+import { MotiView } from 'moti';
 import CoverPage from '../business-plan-pages/CoverPage';
 import { StyleSheet } from 'react-native';
 import { Company } from '@/types/company.types';
@@ -103,11 +104,16 @@ const styles = StyleSheet.create({
       marginTop: 4,
    },
    cardLoadingContainer: {
-      display: "flex",
-      alignItems: "center",
-      flexDirection: "row",
-      gap: 6,
-      marginTop: 4,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      marginTop: 6,
+   },
+   generatingSkeleton: {
+      width: 12,
+      height: 12,
+      backgroundColor: 'rgba(255, 255, 255, 0.4)',
+      borderRadius: 6,
    },
    card: {
       width: "48%"

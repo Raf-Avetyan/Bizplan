@@ -5,13 +5,13 @@ import {
   TouchableOpacity,
   Text,
   StyleSheet,
-  Alert,
   ActivityIndicator,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
 import axiosClient from "@/api/axios-client";
 import { AuthResponse } from '@/types/auth.types';
+import { useToast } from '@/components/ui/Toast/Toast';
 
 export default function SignUp() {
   const [isLogin, setIsLogin] = useState(true);
@@ -20,14 +20,15 @@ export default function SignUp() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const toast = useToast();
 
   const handleAuth = async () => {
     if (!email || !password) {
-      Alert.alert("Error", "Email and password are required");
+      toast.showToast("Error", "Email and password are required", "error");
       return;
     }
     if (!isLogin && !name) {
-      Alert.alert("Error", "Name is required for registration");
+      toast.showToast("Error", "Name is required for registration", "error");
       return;
     }
 
@@ -45,7 +46,7 @@ export default function SignUp() {
         await AsyncStorage.setItem("auth_token", token);
         await AsyncStorage.setItem("user", JSON.stringify(user));
 
-        Alert.alert("Success", "Login successful!");
+        toast.showToast("Success", "Login successful!", "success");
         router.replace("/(root)/(tabs)");
       } else {
         const data: AuthResponse = await axiosClient.post("/auth/register", {
@@ -59,7 +60,7 @@ export default function SignUp() {
         await AsyncStorage.setItem("auth_token", token);
         await AsyncStorage.setItem("user", JSON.stringify(user));
 
-        Alert.alert("Success", "Registration successful!");
+        toast.showToast("Success", "Registration successful!", "success");
         router.replace("/(root)/(tabs)");
       }
     } catch (error: any) {
@@ -67,7 +68,7 @@ export default function SignUp() {
         error?.error ||
         "Authentication failed";
 
-      Alert.alert("Error", errorMessage);
+      toast.showToast("Error", errorMessage, "error");
     } finally {
       setLoading(false);
     }

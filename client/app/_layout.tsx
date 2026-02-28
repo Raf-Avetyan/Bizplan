@@ -5,6 +5,7 @@ import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ToastProvider } from '@/components/ui/Toast/Toast';
 
 SplashScreen.preventAutoHideAsync();
 import "@/global.css";
@@ -45,15 +46,17 @@ export default function MainLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: "#0a1b1f" }}>
       <QueryClientProvider client={queryClient}>
-        <Stack screenOptions={{ contentStyle: { backgroundColor: "#0a1b1f" } }}>
-          <Stack.Screen name="index" options={{ headerShown: false }} />
-          <Stack.Screen
-            name="(root)"
-            options={{ headerShown: false, animation: "none" }}
-          />
-          <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-          <Stack.Screen name="+not-found" />
-        </Stack>
+        <ToastProvider>
+          <Stack screenOptions={{ contentStyle: { backgroundColor: "#0a1b1f" } }}>
+            <Stack.Screen name="index" options={{ headerShown: false }} />
+            <Stack.Screen
+              name="(root)"
+              options={{ headerShown: false, animation: "none" }}
+            />
+            <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+            <Stack.Screen name="+not-found" />
+          </Stack>
+        </ToastProvider>
       </QueryClientProvider>
     </GestureHandlerRootView>
   );

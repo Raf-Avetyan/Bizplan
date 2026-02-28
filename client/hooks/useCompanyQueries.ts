@@ -26,7 +26,7 @@ export const useCompanyAdditionalData = (planId?: string) => {
    });
 };
 
-export const useCreateCompany = () => {
+export const useCreateCompany = (onCreated?: () => void) => {
    const queryClient = useQueryClient();
 
    return useMutation({
@@ -34,8 +34,13 @@ export const useCreateCompany = () => {
       onSuccess: async (newPlan: Company) => {
          await companyService.setActive(newPlan.id);
 
+         if (onCreated) {
+            onCreated();
+         }
+
          queryClient.setQueryData(['activeCompany'], newPlan);
          queryClient.invalidateQueries({ queryKey: ['activeCompany'] });
+         queryClient.invalidateQueries({ queryKey: ['companyAdditionalData'] });
 
          return newPlan;
       },

@@ -1,6 +1,6 @@
 import LottieView from "lottie-react-native";
 import React, { useState, useEffect } from "react";
-import { Alert, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { Text, TextInput, TouchableOpacity, View } from "react-native";
 import { PanGestureHandler, State } from "react-native-gesture-handler";
 import { Plus } from "lucide-react-native";
 import { cn } from "@/lib/utils";
@@ -13,6 +13,7 @@ import UniqueIdeas from './tabs/UniqueIdeas';
 import OurPolicyInfo from './ui/OurPolicyInfo';
 import { router } from 'expo-router';
 import { useCreateCompany } from '@/hooks/useCompanyQueries';
+import { useToast } from '@/components/ui/Toast/Toast';
 
 export default function CreateNewCompany() {
    const [isGeneratingIdeas, setIsGeneratingIdeas] = useState(false);
@@ -26,8 +27,11 @@ export default function CreateNewCompany() {
       name: "idea" | "place" | "unique" | "businessName"; id: number
    }>({ name: "idea", id: 0 });
 
+   const toast = useToast();
    const chat = useAiChat({ history: [] });
-   const createCompanyMutation = useCreateCompany();
+   const createCompanyMutation = useCreateCompany(() => {
+      router.push("/(root)/(tabs)/(dashboard)" as any);
+   });
 
    const lottieAnimations = {
       idea: { id: 0, url: require("@/assets/lottie/idea.json") },
@@ -87,10 +91,8 @@ export default function CreateNewCompany() {
             idea: inputText.idea,
             uniqueTags: inputText.uniqueTags,
          });
-
-         router.push("/(root)/(tabs)/(dashboard)")
       } catch (error: any) {
-         Alert.alert("Error", "Failed to create company");
+         toast.showToast("Error", "Failed to create company", "error");
       }
    };
 

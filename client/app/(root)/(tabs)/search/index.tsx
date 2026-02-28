@@ -8,8 +8,9 @@ export default function SearchIndex() {
       <>
          <SearchBar placement="automatic" placeholder="Search" onChangeText={() => { }} />
          <LinearGradient
-            colors={["#4D2FB2", "#061E29"]}
+            colors={["#4D2FB2", "#2B1A66", "#050510"]}
             style={{ flex: 1 }}
+            locations={[0, 0.6, 1]}
          >
             <ScrollView>
                <SafeAreaView>
