@@ -33,7 +33,10 @@ export interface PageBlock {
     listType?: 'bullet' | 'number' | 'check';
     imageSrc?: string;
     chartType?: string;
-    author?: string
+    author?: string;
+    caption?: string;
+    resizeMode?: string;
+    borderStyle?: string;
   };
 }
 

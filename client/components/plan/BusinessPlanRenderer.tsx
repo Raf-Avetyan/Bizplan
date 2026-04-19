@@ -4,17 +4,22 @@ import {
    Text,
    StyleSheet,
    ScrollView,
-   TouchableOpacity,
    ActivityIndicator,
    Image,
+   Pressable,
+   TouchableOpacity,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { BusinessPlanTemplate } from '@/types/business-plan.types';
 import { Page, PageBlock } from '@/app/(root)/(tabs)/(dashboard)/components/Content';
 import CoverPage from '@/app/(root)/(tabs)/(dashboard)/components/business-plan-pages/CoverPage';
 import { useActiveCompany } from '@/hooks/useCompanyQueries';
-import { MotiView } from 'moti';
-import { Image as LucideImage } from 'lucide-react-native';
+import { MotiView, AnimatePresence } from 'moti';
+import { Image as LucideImage, MoreHorizontal, Upload } from 'lucide-react-native';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
+import * as FileSystem from 'expo-file-system/legacy';
 
 type BusinessPlanRendererProps = {
    businessPlan: BusinessPlanTemplate;
@@ -129,22 +134,33 @@ export const renderBlockContent = (block: PageBlock, key: number) => {
             block.content.startsWith('content') ||
             block.content.startsWith('data:image')
          );
+         const imgBorderRadius = Number(block.styles?.borderRadius) || 0;
+         const imgResizeMode = (block.metadata?.resizeMode || 'cover') as 'cover' | 'contain' | 'stretch';
+         const imgBorderStyle = block.metadata?.borderStyle || 'none';
+         const imgCaption = block.metadata?.caption || '';
+         const borderFrameStyle = imgBorderStyle === 'thin' ? { borderWidth: 1, borderColor: '#ddd' }
+            : imgBorderStyle === 'medium' ? { borderWidth: 2, borderColor: '#999' }
+               : imgBorderStyle === 'shadow' ? { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8, elevation: 6 }
+                  : {};
          return (
-            <View style={[styles.imageContainer, block.styles, { height: block.styles?.height || 200, padding: 0 }]} key={key}>
-               {hasImage ? (
-                  <Image
-                     source={{ uri: block.content as string }}
-                     style={[styles.blockImage, { width: '100%', height: '100%' }]}
-                     resizeMode="cover"
-                  />
-               ) : (
-                  <View style={styles.imagePlaceholder}>
-                     <LucideImage size={48} color="#ccc" />
-                     <Text style={styles.imageText}>
-                        {typeof block.content === 'string' ? block.content : 'Image'}
-                     </Text>
-                  </View>
-               )}
+            <View key={key}>
+               <View style={[styles.imageContainer, block.styles, { height: block.styles?.height || 200, padding: 0, borderRadius: imgBorderRadius === 999 ? Number(block.styles?.height || 200) : imgBorderRadius, overflow: 'hidden' as const }, borderFrameStyle]}>
+                  {hasImage ? (
+                     <Image
+                        source={{ uri: block.content as string }}
+                        style={[styles.blockImage, { width: '100%', height: '100%' }]}
+                        resizeMode={imgResizeMode}
+                     />
+                  ) : (
+                     <View style={styles.imagePlaceholder}>
+                        <LucideImage size={48} color="#ccc" />
+                        <Text style={styles.imageText}>
+                           {typeof block.content === 'string' ? block.content : 'Image'}
+                        </Text>
+                     </View>
+                  )}
+               </View>
+               {imgCaption ? <Text style={{ fontSize: 11, color: '#888', textAlign: 'center', marginTop: 4, fontStyle: 'italic' }}>{imgCaption}</Text> : null}
             </View>
          );
       default:
@@ -172,6 +188,249 @@ const BusinessPlanRenderer = forwardRef<ScrollView, BusinessPlanRendererProps>((
 
    const [loadedSections, setLoadedSections] = useState<{ [key: string]: number }>({});
    const [loadingSections, setLoadingSections] = useState<{ [key: string]: boolean }>({});
+   const [showMenu, setShowMenu] = useState(false);
+   const [isExporting, setIsExporting] = useState(false);
+
+   const prepareImages = async () => {
+      if (!businessPlan || !businessPlan.presentation?.pages) return {};
+
+      const imageMap: { [key: string]: string } = {};
+      const pages = businessPlan.presentation.pages;
+
+      for (const page of pages) {
+         if (page.blocks) {
+            for (const block of page.blocks) {
+               if (block.type === 'image' && typeof block.content === 'string') {
+                  const uri = block.content;
+                  if (uri.startsWith('http') || uri.startsWith('data:')) {
+                     imageMap[uri] = uri;
+                  } else if (uri.startsWith('file://') || uri.startsWith('content://') || uri.startsWith('/')) {
+                     try {
+                        const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
+                        imageMap[uri] = `data:image/jpeg;base64,${base64}`;
+                     } catch (e) {
+                        console.error('Error reading local image:', uri, e);
+                        imageMap[uri] = uri;
+                     }
+                  }
+               }
+            }
+         }
+      }
+      return imageMap;
+   };
+
+   const generatePdfHtml = (imageMap: { [key: string]: string }) => {
+      if (!businessPlan || !businessPlan.presentation?.pages) return '';
+
+      const pages = businessPlan.presentation.pages;
+      const businessName = businessPlan.metadata.business_name;
+
+      let html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          @page { margin: 0; size: 1000px 1414px; }
+          body { 
+            margin: 0; 
+            padding: 0; 
+            font-family: 'Helvetica', 'Arial', sans-serif;
+            background-color: #f5f5f5;
+          }
+          .page {
+            width: 1000px;
+            padding: 60px;
+            box-sizing: border-box;
+            background-color: white;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+          }
+          .page-content { 
+             flex: 1; 
+             display: flex; 
+             flex-direction: column;
+             height: 100% !important;
+          }
+          
+          /* Cover Page Styles */
+          .cover-container { 
+            height: 1175px !important;
+            display: flex; 
+            flex-direction: column; 
+            justify-content: space-between; 
+          }
+          .logo-box {
+            width: 200px;
+            height: 100px;
+            background-color: #f0f0f0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 12px;
+            font-weight: bold;
+            color: #666;
+            margin-bottom: 40px;
+          }
+          .cover-title {
+            font-size: 64px;
+            font-weight: 800;
+            color: #001941;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+          }
+          .cover-subtitle {
+            font-size: 28px;
+            font-weight: 500;
+            color: #666;
+            letter-spacing: 2px;
+          }
+          .contact-info { font-size: 16px; color: #666; line-height: 1.6; margin-top: 60px; }
+
+          /* TOC Styles */
+         .toc-container {
+            height: 1175px !important;
+          }
+          .toc-title { font-size: 32px; font-weight: bold; text-align: center; margin-bottom: 40px; color: #001941; }
+          .toc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }
+          .toc-section { margin-bottom: 30px; }
+          .toc-header { 
+            display: flex; 
+            justify-content: space-between; 
+            border-bottom: 2px solid #eee; 
+            padding-bottom: 5px; 
+            margin-bottom: 10px;
+            font-size: 18px;
+            font-weight: bold;
+            color: #001941;
+            text-transform: uppercase;
+          }
+          .toc-item { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 16px; color: #333; }
+
+          /* Content Styles */
+          .heading { font-size: 42px; font-weight: bold; margin-bottom: 20px; color: #001941; }
+          .paragraph { font-size: 20px; line-height: 1.6; color: #333; margin-bottom: 20px; }
+          .list-container { margin-bottom: 20px; }
+          .list-item { display: flex; align-items: flex-start; margin-bottom: 10px; font-size: 20px; color: #333; }
+          .list-bullet { margin-right: 15px; font-weight: bold; }
+          .divider { height: 4px; background-color: #001941; margin: 30px 0; width: 80%; }
+          .image-wrap { margin: 30px 0; text-align: center; }
+          .block-img { max-width: 100%; border-radius: 12px; }
+          .caption { font-size: 16px; color: #888; font-style: italic; margin-top: 10px; }
+        </style>
+      </head>
+      <body>
+      `;
+
+      pages.forEach((page) => {
+         html += `<div class="page">`;
+         html += `<div class="page-content">`;
+
+         if (page.type === 'cover') {
+            html += `
+            <div class="cover-container">
+              <div class="logo-box">LOGO</div>
+              <div>
+                <div class="cover-title">${activeCompany?.businessName || businessName}</div>
+                <div class="cover-subtitle">BUSINESS PLAN</div>
+              </div>
+              <div class="contact-info">
+                <div>NAME@EXAMPLE.COM</div>
+                <div>416 656 1234</div>
+                <div>EXAMPLE.COM</div>
+                <div>123 ELM STREET, TORONTO, ON</div>
+              </div>
+            </div>`;
+         } else if (page.type === 'toc') {
+            html += `<div class="toc-container"><div class="toc-title">Table Of Contents</div>`;
+            html += `<div class="toc-grid">`;
+
+            const renderCol = (items: typeof tableOfContents, startIdx: number) => {
+               let colHtml = '<div class="toc-column">';
+               items.forEach((section, idx) => {
+                  colHtml += `
+                  <div class="toc-section">
+                    <div class="toc-header">
+                      <span>${section.title}</span>
+                      <span>${(startIdx + idx) * 4 + 1}</span>
+                    </div>`;
+                  section.items.forEach(item => {
+                     colHtml += `
+                     <div class="toc-item">
+                       <span>${item.name}</span>
+                       <span>${item.page}</span>
+                     </div>`;
+                  });
+                  colHtml += `</div>`;
+               });
+               colHtml += '</div>';
+               return colHtml;
+            };
+
+            html += renderCol(tableOfContents.slice(0, Math.ceil(tableOfContents.length / 2)), 0);
+            html += renderCol(tableOfContents.slice(Math.ceil(tableOfContents.length / 2)), Math.ceil(tableOfContents.length / 2));
+            html += `</div>`;
+         } else {
+            page.blocks?.forEach(block => {
+               if (block.type === 'heading') {
+                  html += `<div class="heading">${block.content}</div>`;
+               } else if (block.type === 'paragraph') {
+                  html += `<div class="paragraph">${block.content}</div>`;
+               } else if (block.type === 'list' && Array.isArray(block.content)) {
+                  html += `<div class="list-container">`;
+                  block.content.forEach(item => {
+                     html += `<div class="list-item"><span class="list-bullet">•</span><span>${item}</span></div>`;
+                  });
+                  html += `</div>`;
+               } else if (block.type === 'divider') {
+                  html += `<div class="divider"></div>`;
+               } else if (block.type === 'image') {
+                  const uri = typeof block.content === 'string' ? block.content : '';
+                  const processedUri = imageMap[uri] || uri;
+                  if (processedUri) {
+                     html += `
+                    <div class="image-wrap">
+                      <img src="${processedUri}" class="block-img" style="max-height: ${block.styles?.height ? Number(block.styles.height) * 2 : 500}px; object-fit: cover;" />
+                      ${block.metadata?.caption ? `<div class="caption">${block.metadata.caption}</div>` : ''}
+                    </div>`;
+                  }
+               }
+            });
+         }
+
+         html += `</div></div></div>`;
+      });
+
+      html += `</body></html>`;
+      return html;
+   };
+
+   const exportToPdf = async () => {
+      try {
+         setIsExporting(true);
+         setShowMenu(false);
+
+         const imageMap = await prepareImages();
+         const html = generatePdfHtml(imageMap);
+
+         const { uri } = await Print.printToFileAsync({
+            html,
+            base64: false
+         });
+
+         await Sharing.shareAsync(uri, {
+            mimeType: 'application/pdf',
+            dialogTitle: `Export ${businessPlan.metadata.business_name} PDF`,
+            UTI: 'com.adobe.pdf'
+         });
+      } catch (err) {
+         console.error('PDF Export Error:', err);
+      } finally {
+         setIsExporting(false);
+      }
+   };
 
    const handlePagePress = (pageNumber: number) => {
       if (isNavigating || lastClickedPage === pageNumber) {
@@ -404,6 +663,81 @@ const BusinessPlanRenderer = forwardRef<ScrollView, BusinessPlanRendererProps>((
          showsVerticalScrollIndicator={true}
          contentContainerStyle={styles.scrollContent}
       >
+         {isExporting && (
+            <View style={styles.exportOverlay}>
+               <ActivityIndicator size="large" color="#4D2FB2" />
+               <Text style={styles.exportText}>Generating PDF...</Text>
+            </View>
+         )}
+
+         <View style={styles.topActions} pointerEvents="box-none">
+            <TouchableOpacity
+               style={styles.actionButtonContainer}
+            >
+               <TouchableOpacity style={styles.actionButton} onPress={() => setShowMenu(!showMenu)}>
+                  <MoreHorizontal size={22} color="#eee" />
+               </TouchableOpacity>
+            </TouchableOpacity>
+
+            <AnimatePresence>
+               {showMenu && (
+                  <>
+                     <TouchableOpacity
+                        style={StyleSheet.absoluteFill}
+                        onPress={() => setShowMenu(false)}
+                     />
+                     <MotiView
+                        from={{ opacity: 0, scale: 0.9, translateY: -10 }}
+                        animate={{ opacity: 1, scale: 1, translateY: 0 }}
+                        exit={{ opacity: 0, scale: 0.9, translateY: -10 }}
+                        transition={{ type: 'timing', duration: 150 }}
+                        style={styles.dropdownMenuWrapper}
+                     >
+                        <TouchableOpacity
+                           style={styles.menuOption}
+                           onPress={() => {
+                              setShowMenu(false);
+                              exportToPdf();
+                           }}
+                           activeOpacity={0.6}
+                        >
+                           <View style={styles.menuIconCircle}>
+                              <Upload size={18} color="#eee" />
+                           </View>
+                           <Text style={styles.menuOptionText}>Export to PDF</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                           style={styles.menuOption}
+                           onPress={() => {
+                              setShowMenu(false);
+                              exportToPdf();
+                           }}
+                           activeOpacity={0.6}
+                        >
+                           <View style={styles.menuIconCircle}>
+                              <Upload size={18} color="#eee" />
+                           </View>
+                           <Text style={styles.menuOptionText}>Export to PDF</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                           style={styles.menuOption}
+                           onPress={() => {
+                              setShowMenu(false);
+                              exportToPdf();
+                           }}
+                           activeOpacity={0.6}
+                        >
+                           <View style={styles.menuIconCircle}>
+                              <Upload size={18} color="#eee" />
+                           </View>
+                           <Text style={styles.menuOptionText}>Export to PDF</Text>
+                        </TouchableOpacity>
+                     </MotiView>
+                  </>
+               )}
+            </AnimatePresence>
+         </View>
+
          {renderPages()}
          <View style={styles.bottomSpacer} />
       </ScrollView>
@@ -782,6 +1116,86 @@ const styles = StyleSheet.create({
       backgroundColor: 'rgba(255, 255, 255, 0.05)',
       borderRadius: 4,
       marginBottom: 10,
+   },
+   topActions: {
+      position: 'absolute',
+      top: 10,
+      left: 0,
+      right: 25,
+      bottom: 0,
+      zIndex: 1000,
+      alignItems: 'flex-end',
+   },
+   actionButtonContainer: {
+      borderRadius: 21,
+      overflow: 'hidden',
+   },
+   actionButton: {
+      width: 42,
+      height: 42,
+      borderRadius: 21,
+      backgroundColor: 'rgba(255, 255, 255, 0.1)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: 'rgba(255,255,255,0.2)',
+      overflow: 'hidden',
+   },
+   dropdownMenuWrapper: {
+      position: 'absolute',
+      top: 50,
+      right: 0,
+      width: 200,
+      backgroundColor: '#4e2fb2e6',
+      borderRadius: 22,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 12 },
+      shadowOpacity: 0.25,
+      shadowRadius: 20,
+      elevation: 12,
+      zIndex: 2001,
+      padding: 6,
+      display: "flex",
+      gap: 4,
+      borderWidth: 1,
+      borderColor: 'rgba(255, 255, 255, .15)',
+      overflow: 'hidden',
+   },
+   menuOption: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      borderRadius: 16,
+      backgroundColor: 'rgba(255, 255, 255, .05)',
+      gap: 14,
+   },
+   menuIconCircle: {
+      width: 32,
+      height: 32,
+      borderRadius: 14,
+      backgroundColor: 'rgba(255, 255, 255, 0.15)',
+      justifyContent: 'center',
+      alignItems: 'center',
+   },
+   menuOptionText: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: '#eee',
+      letterSpacing: 0.3,
+   },
+   exportOverlay: {
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: 'rgba(0,0,0,0.7)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      zIndex: 2000,
+   },
+   exportText: {
+      color: 'white',
+      marginTop: 15,
+      fontSize: 16,
+      fontWeight: '600',
    },
 });
 

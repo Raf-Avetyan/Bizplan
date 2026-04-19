@@ -10,6 +10,7 @@ import { ToastProvider } from '@/components/ui/Toast/Toast';
 SplashScreen.preventAutoHideAsync();
 import "@/global.css";
 
+
 export default function MainLayout() {
   const [loaded] = useFonts({
     Arm_Hmks_Bebas_Neue: require("../assets/fonts/Arm_Hmks_Bebas_Neue/Arm_Hmks_Bebas_Neue.ttf"),

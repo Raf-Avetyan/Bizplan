@@ -19,19 +19,20 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { MotiView, AnimatePresence } from 'moti';
+import DraggableFlatList, { RenderItemParams } from 'react-native-draggable-flatlist';
 import {
    Heading1, Heading2, Heading3, Heading4, Heading5, Heading6,
    Type, Bold, Italic, Underline, List, Image as LucideImage,
    Quote, Minus, AlignLeft, AlignCenter, AlignRight, Trash2,
    PlusCircle, X, Camera, ArrowLeft, Plus, ChevronDown, ChevronUp,
+   ArrowUp, ArrowDown, GripVertical,
 } from 'lucide-react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { router, useLocalSearchParams, useRouter } from 'expo-router';
 import { PageBlock } from '../(tabs)/(dashboard)/components/Content';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BusinessPlanTemplate } from '@/types/business-plan.types';
 import { useActiveCompany, useCompanyAdditionalData, useUpdateCompanyAdditionalData } from '@/hooks/useCompanyQueries';
-import { BlurView } from 'expo-blur';
 import { useToast } from '@/components/ui/Toast/Toast';
 
 const { height } = Dimensions.get('window');
@@ -59,9 +60,13 @@ export default function EditPage() {
 
    const scrollViewRef = useRef<ScrollView>(null);
    const blockRefs = useRef<Map<string, View>>(new Map());
+   const menuScrollViewRef = useRef<ScrollView>(null);
 
    const [isListMenuVisible, setIsListMenuVisible] = useState(false);
    const [isImageMenuVisible, setIsImageMenuVisible] = useState(false);
+   const [heightInput, setHeightInput] = useState('');
+   const [captionInput, setCaptionInput] = useState('');
+   const [localListItems, setLocalListItems] = useState<{ id: string; text: string; }[]>([]);
 
    const openListMenu = () => {
       setIsListMenuVisible(true);
@@ -71,15 +76,7 @@ export default function EditPage() {
       setIsImageMenuVisible(true);
    };
 
-   const closeListMenu = () => {
-      setIsListMenuVisible(false);
-      setSelectedBlock(null);
-   };
 
-   const closeImageMenu = () => {
-      setIsImageMenuVisible(false);
-      setSelectedBlock(null);
-   };
 
    useEffect(() => {
       if (companyAdditionalData?.business_plan) {
@@ -152,9 +149,13 @@ export default function EditPage() {
    const handleBlockSelect = (block: PageBlock) => {
       setSelectedBlock(block);
       if (block.type === 'list') {
+         const items = Array.isArray(block.content) ? block.content : [];
+         setLocalListItems(items.map((text, i) => ({ id: `item-${i}-${Math.random()}`, text })));
          setEditingContent(JSON.stringify(block.content, null, 2));
          openListMenu();
       } else if (block.type === 'image') {
+         setHeightInput(String(block.styles?.height || 200));
+         setCaptionInput(block.metadata?.caption || '');
          openImageMenu();
       } else if (typeof block.content === 'string') {
          setEditingContent(block.content);
@@ -165,13 +166,45 @@ export default function EditPage() {
       }
    };
 
-   const handleDeselectBlock = () => {
-      setSelectedBlock(null);
-      setEditingContent('');
-      setIsListMenuVisible(false);
-      setIsImageMenuVisible(false);
-      Keyboard.dismiss();
+   const isBlockEmpty = (block: PageBlock): boolean => {
+      if (block.type === 'divider') return false;
+      if (block.type === 'image') return !block.content;
+
+      const defaultContents = [
+         '', 'Add your content here...',
+         'New Heading', 'New Subheading', 'New Small Heading',
+         `New ${block.type.charAt(0).toUpperCase() + block.type.slice(1)}`,
+      ];
+
+      if (typeof block.content === 'string') {
+         return defaultContents.includes(block.content.trim());
+      }
+
+      if (Array.isArray(block.content)) {
+         return block.content.length === 0 || block.content.every(item => item.trim() === '');
+      }
+
+      return false;
    };
+
+   const silentDeleteBlock = (blockId: string) => {
+      if (!currentPlan || !currentPage) return;
+
+      const updatedBlocks = currentPage.blocks.filter(block => block.id !== blockId);
+      const updatedPage = { ...currentPage, blocks: updatedBlocks };
+      const updatedPages = currentPlan.presentation.pages.map((page, index) =>
+         index === pageIndex ? updatedPage : page
+      );
+      const updatedPlan = {
+         ...currentPlan,
+         presentation: { ...currentPlan.presentation, pages: updatedPages },
+      };
+
+      setCurrentPlan(updatedPlan);
+      setHasUnsavedChanges(true);
+   };
+
+
 
    const updateBlockContent = (blockId: string, newContent: string) => {
       if (!currentPlan || !currentPage) return;
@@ -391,9 +424,22 @@ export default function EditPage() {
          }
       };
 
+      // Insert after selected block if one is selected, otherwise append to end
+      let newBlocks;
+      if (selectedBlock) {
+         const selectedIndex = currentPage.blocks.findIndex(b => b.id === selectedBlock.id);
+         newBlocks = [
+            ...currentPage.blocks.slice(0, selectedIndex + 1),
+            newBlock,
+            ...currentPage.blocks.slice(selectedIndex + 1)
+         ];
+      } else {
+         newBlocks = [...currentPage.blocks, newBlock];
+      }
+
       const updatedPage = {
          ...currentPage,
-         blocks: [...currentPage.blocks, newBlock]
+         blocks: newBlocks
       };
 
       const updatedPages = currentPlan.presentation.pages.map((page, index) => {
@@ -430,9 +476,35 @@ export default function EditPage() {
       }
    };
 
+   const moveBlock = (blockId: string, direction: 'up' | 'down') => {
+      if (!currentPlan || !currentPage) return;
+
+      const blocks = [...currentPage.blocks];
+      const index = blocks.findIndex(b => b.id === blockId);
+      if (index === -1) return;
+
+      const newIndex = direction === 'up' ? index - 1 : index + 1;
+      if (newIndex < 0 || newIndex >= blocks.length) return;
+
+      [blocks[index], blocks[newIndex]] = [blocks[newIndex], blocks[index]];
+
+      const updatedPage = { ...currentPage, blocks };
+      const updatedPages = currentPlan.presentation.pages.map((page, i) =>
+         i === pageIndex ? updatedPage : page
+      );
+      const updatedPlan = {
+         ...currentPlan,
+         presentation: { ...currentPlan.presentation, pages: updatedPages },
+      };
+
+      setCurrentPlan(updatedPlan);
+      setHasUnsavedChanges(true);
+   };
+
    const deleteBlock = (blockId: string) => {
       if (!currentPlan || !currentPage) return;
 
+      Keyboard.dismiss();
       toast.showConfirm(
          "Delete Block",
          "Are you sure you want to delete this block?",
@@ -461,7 +533,7 @@ export default function EditPage() {
 
             setCurrentPlan(updatedPlan);
             setHasUnsavedChanges(true);
-            handleDeselectBlock();
+            handleDeselectBlock(true);
          },
          { confirmText: 'Delete', cancelText: 'Cancel', type: 'error' }
       );
@@ -492,24 +564,115 @@ export default function EditPage() {
    };
 
    const updateListItem = (index: number, text: string) => {
-      if (!selectedBlock || !Array.isArray(selectedBlock.content)) return;
+      if (!selectedBlock) return;
+      const newList = [...localListItems];
+      newList[index] = { ...newList[index], text };
+      setLocalListItems(newList);
+   };
 
-      const newItems = [...selectedBlock.content];
-      newItems[index] = text;
-
-      updateBlockContent(selectedBlock.id, JSON.stringify(newItems));
+   const flushListUpdate = () => {
+      if (!selectedBlock) return;
+      updateBlockContent(selectedBlock.id, JSON.stringify(localListItems.map(i => i.text)));
    };
 
    const addListItem = () => {
-      if (!selectedBlock || !Array.isArray(selectedBlock.content)) return;
-      const newItems = [...selectedBlock.content, ''];
-      updateBlockContent(selectedBlock.id, JSON.stringify(newItems));
+      if (!selectedBlock) return;
+      const newItem = { id: `item-${Date.now()}-${Math.random()}`, text: '' };
+      const newList = [...localListItems, newItem];
+      setLocalListItems(newList);
+      updateBlockContent(selectedBlock.id, JSON.stringify(newList.map(i => i.text)));
    };
 
    const removeListItem = (index: number) => {
-      if (!selectedBlock || !Array.isArray(selectedBlock.content)) return;
-      const newItems = selectedBlock.content.filter((_, i) => i !== index);
-      updateBlockContent(selectedBlock.id, JSON.stringify(newItems));
+      if (!selectedBlock) return;
+      const newList = localListItems.filter((_, i) => i !== index);
+
+      if (newList.length === 0) {
+         silentDeleteBlock(selectedBlock.id);
+         handleDeselectBlock();
+         return;
+      }
+
+      setLocalListItems(newList);
+      updateBlockContent(selectedBlock.id, JSON.stringify(newList.map(i => i.text)));
+   };
+
+   const reorderListItems = (data: { id: string; text: string; }[]) => {
+      if (!selectedBlock) return;
+      setLocalListItems(data);
+      updateBlockContent(selectedBlock.id, JSON.stringify(data.map(i => i.text)));
+   };
+
+   const setBlockStyle = (blockId: string, style: any) => {
+      if (!currentPlan || !currentPage) return;
+
+      const updatedBlocks = currentPage.blocks.map(block => {
+         if (block.id !== blockId) return block;
+         return { ...block, styles: { ...block.styles, ...style } as BlockStyle };
+      });
+
+      const updatedPage = { ...currentPage, blocks: updatedBlocks };
+      const updatedPages = currentPlan.presentation.pages.map((page, i) =>
+         i === pageIndex ? updatedPage : page
+      );
+      const updatedPlan = {
+         ...currentPlan,
+         presentation: { ...currentPlan.presentation, pages: updatedPages },
+      };
+
+      setCurrentPlan(updatedPlan);
+      setHasUnsavedChanges(true);
+
+      if (selectedBlock?.id === blockId) {
+         setSelectedBlock({ ...selectedBlock, styles: { ...selectedBlock.styles, ...style } as BlockStyle });
+      }
+   };
+
+   const flushPendingChanges = () => {
+      if (!selectedBlock) return;
+
+      if (selectedBlock.type === 'image') {
+         // Flush height
+         let v = parseInt(heightInput);
+         if (!isNaN(v)) {
+            const clampedVal = Math.min(600, Math.max(40, v));
+            setBlockStyle(selectedBlock.id, { height: clampedVal });
+         }
+         // Flush caption
+         updateBlockMetadata(selectedBlock.id, { caption: captionInput });
+      } else if (selectedBlock.type === 'list') {
+         // Flush list items
+         flushListUpdate();
+      }
+   };
+
+   const closeListMenu = () => {
+      Keyboard.dismiss();
+      flushPendingChanges();
+      setIsListMenuVisible(false);
+      setSelectedBlock(null);
+   };
+
+   const closeImageMenu = () => {
+      Keyboard.dismiss();
+      flushPendingChanges();
+      setIsImageMenuVisible(false);
+      setSelectedBlock(null);
+   };
+
+   const handleDeselectBlock = (skipFlush: boolean = false) => {
+      if (selectedBlock && !skipFlush) {
+         flushPendingChanges();
+         if (isBlockEmpty(selectedBlock)) {
+            silentDeleteBlock(selectedBlock.id);
+         }
+      }
+
+      setSelectedBlock(null);
+      setEditingContent('');
+      setIsListMenuVisible(false);
+      setIsImageMenuVisible(false);
+      Keyboard.dismiss();
    };
 
    const handleSave = async () => {
@@ -548,6 +711,7 @@ export default function EditPage() {
    };
 
    const handleDone = async (button: "back" | "save") => {
+      Keyboard.dismiss();
       if (hasUnsavedChanges && companyId) {
          toast.showConfirm(
             'Unsaved Changes',
@@ -569,7 +733,7 @@ export default function EditPage() {
                      if (companyAdditionalData?.business_plan) {
                         setCurrentPlan(companyAdditionalData.business_plan as BusinessPlanTemplate);
                         setHasUnsavedChanges(false);
-                        handleDeselectBlock();
+                        handleDeselectBlock(true);
                         toast.showToast('Discarded', 'Changes have been reset to the last saved version.', 'info');
                      }
                   } else {
@@ -632,22 +796,33 @@ export default function EditPage() {
                block.content.startsWith('content') ||
                block.content.startsWith('data:image')
             );
+            const edBR = Number(block.styles?.borderRadius) || 0;
+            const edRM = (block.metadata?.resizeMode || 'cover') as 'cover' | 'contain' | 'stretch';
+            const edBS = block.metadata?.borderStyle || 'none';
+            const edCap = block.metadata?.caption || '';
+            const edFrame: any = edBS === 'thin' ? { borderWidth: 1, borderColor: '#ddd' }
+               : edBS === 'medium' ? { borderWidth: 2, borderColor: '#999' }
+                  : edBS === 'shadow' ? { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8, elevation: 6 }
+                     : {};
             return (
-               <View style={[styles.imageContainer, block.styles, { height: block.styles?.height || 200, padding: 0 }]}>
-                  {hasImage ? (
-                     <Image
-                        source={{ uri: block.content as string }}
-                        style={[styles.blockImage, { width: '100%', height: '100%' }]}
-                        resizeMode="cover"
-                     />
-                  ) : (
-                     <View style={styles.imagePlaceholder}>
-                        <LucideImage size={48} color="#ccc" />
-                        <Text style={styles.imageText}>
-                           {typeof block.content === 'string' ? block.content : 'Image'}
-                        </Text>
-                     </View>
-                  )}
+               <View>
+                  <View style={[styles.imageContainer, block.styles, { height: block.styles?.height || 200, padding: 0, borderRadius: edBR === 999 ? Number(block.styles?.height || 200) : edBR, overflow: 'hidden' }, edFrame]}>
+                     {hasImage ? (
+                        <Image
+                           source={{ uri: block.content as string }}
+                           style={[styles.blockImage, { width: '100%', height: '100%' }]}
+                           resizeMode={edRM}
+                        />
+                     ) : (
+                        <View style={styles.imagePlaceholder}>
+                           <LucideImage size={48} color="#ccc" />
+                           <Text style={styles.imageText}>
+                              {typeof block.content === 'string' ? block.content : 'Image'}
+                           </Text>
+                        </View>
+                     )}
+                  </View>
+                  {edCap ? <Text style={{ fontSize: 11, color: '#888', textAlign: 'center', marginTop: 4, fontStyle: 'italic' }}>{edCap}</Text> : null}
                </View>
             );
          default:
@@ -768,58 +943,101 @@ export default function EditPage() {
                      </TouchableOpacity>
                   </View>
 
-                  <ScrollView style={styles.listMenuItemsContainer} showsVerticalScrollIndicator={false}>
-                     {items.map((item, index) => (
-                        <View key={index} style={styles.listMenuInputItem}>
-                           <Text style={styles.itemNumber}>{index + 1}.</Text>
-                           <TextInput
-                              style={styles.listItemInput}
-                              value={item}
-                              onChangeText={(text) => updateListItem(index, text)}
-                              multiline
-                              placeholder="List item content..."
-                           />
-                           <TouchableOpacity
-                              onPress={() => removeListItem(index)}
-                              style={styles.removeItemButton}
+                  <DraggableFlatList
+                     data={localListItems}
+                     keyExtractor={(item) => item.id}
+                     onDragEnd={({ data }) => reorderListItems(data)}
+                     containerStyle={styles.listMenuItemsContainer}
+                     renderItem={({ item, getIndex, drag, isActive }: RenderItemParams<{ id: string; text: string; }>) => {
+                        const index = getIndex() ?? 0;
+                        return (
+                           <View
+                              style={[
+                                 styles.listMenuInputItem,
+                                 isActive && {
+                                    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                                    borderColor: 'rgba(255, 255, 255, 0.4)',
+                                    shadowColor: '#fff',
+                                    shadowOpacity: 0.15,
+                                    shadowRadius: 10,
+                                    elevation: 8,
+                                 }
+                              ]}
                            >
-                              <Trash2 size={24} color="rgba(239, 68, 68, 0.8)" />
-                           </TouchableOpacity>
-                        </View>
-                     ))}
+                              <TouchableOpacity onLongPress={drag} delayLongPress={100} style={{ padding: 6, marginRight: 4 }}>
+                                 <GripVertical size={16} color="rgba(255, 255, 255, 0.4)" />
+                              </TouchableOpacity>
+                              <Text style={styles.itemNumber}>{index + 1}.</Text>
+                              <TextInput
+                                 style={styles.listItemInput}
+                                 value={item.text}
+                                 onChangeText={(text) => updateListItem(index, text)}
+                                 onEndEditing={flushListUpdate}
+                                 multiline
+                                 placeholder="List item content..."
+                                 placeholderTextColor="rgba(255,255,255,0.3)"
+                              />
+                              <TouchableOpacity
+                                 onPress={() => removeListItem(index)}
+                                 style={styles.removeItemButton}
+                              >
+                                 <Trash2 size={20} color="rgba(239, 68, 68, 0.8)" />
+                              </TouchableOpacity>
+                           </View>
+                        );
+                     }}
+                  />
 
-                     <View style={{ flexDirection: 'row', gap: 10 }}>
-                        <TouchableOpacity style={[styles.addItemButton, { flex: 1 }]} onPress={addListItem}>
-                           <PlusCircle size={20} color="whitesmoke" />
-                           <Text style={styles.addItemButtonText}>Add Item</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                           style={[styles.addItemButton, { flex: 1, backgroundColor: 'rgba(239, 68, 68, 0.15)', borderColor: 'rgba(239, 68, 68, 0.3)' }]}
-                           onPress={() => deleteBlock(selectedBlock.id)}
-                        >
-                           <Trash2 size={20} color="whitesmoke" />
-                           <Text style={styles.addItemButtonText}>Delete List</Text>
-                        </TouchableOpacity>
-                     </View>
-                  </ScrollView>
+                  <View style={{ flexDirection: 'row', gap: 10 }}>
+                     <TouchableOpacity style={[styles.addItemButton, { flex: 1 }]} onPress={addListItem}>
+                        <PlusCircle size={20} color="whitesmoke" />
+                        <Text style={styles.addItemButtonText}>Add Item</Text>
+                     </TouchableOpacity>
+                     <TouchableOpacity
+                        style={[styles.addItemButton, { flex: 1, backgroundColor: 'rgba(239, 68, 68, 0.15)', borderColor: 'rgba(239, 68, 68, 0.3)' }]}
+                        onPress={() => deleteBlock(selectedBlock.id)}
+                     >
+                        <Trash2 size={20} color="whitesmoke" />
+                        <Text style={styles.addItemButtonText}>Delete List</Text>
+                     </TouchableOpacity>
+                  </View>
                </View>
             </LinearGradient>
-         </MotiView>
+         </MotiView >
       );
    };
 
    const renderImageEditMenu = () => {
       if (!selectedBlock || selectedBlock.type !== 'image') return null;
 
+      const currentHeight = Number(selectedBlock.styles?.height) || 200;
+      const currentBorderRadius = Number(selectedBlock.styles?.borderRadius) || 0;
+      const currentResizeMode = selectedBlock.metadata?.resizeMode || 'cover';
+      const currentCaption = selectedBlock.metadata?.caption || '';
+
+      const sizePresets = [
+         { label: 'Banner', h: 120 },
+         { label: 'Square', h: 300 },
+         { label: 'Portrait', h: 400 },
+         { label: 'Landscape', h: 180 },
+      ];
+
+      const radiusPresets = [
+         { label: 'None', val: 0 },
+         { label: 'S', val: 8 },
+         { label: 'M', val: 16 },
+         { label: 'L', val: 24 },
+         { label: '\u25CF', val: 999 },
+      ];
+
+      const resizeModes = ['cover', 'contain', 'stretch'];
+
       return (
          <MotiView
             from={{ translateX: Dimensions.get('window').width, opacity: 0 }}
             animate={{ translateX: 0, opacity: 1 }}
             exit={{ translateX: Dimensions.get('window').width, opacity: 0 }}
-            transition={{
-               type: 'timing',
-               duration: 350,
-            }}
+            transition={{ type: 'timing', duration: 350 }}
             style={styles.listMenu}
          >
             <LinearGradient
@@ -837,31 +1055,147 @@ export default function EditPage() {
                      </TouchableOpacity>
                   </View>
 
-                  <ScrollView style={styles.listMenuItemsContainer} showsVerticalScrollIndicator={false}>
-                     <MotiView
-                        animate={{ height: (Number(selectedBlock.styles?.height) || 200) / 1.8 }}
-                        transition={{ type: 'timing', duration: 300 }}
-                        style={styles.imagePreviewContainer}
-                     >
-                        <Image
-                           source={{ uri: selectedBlock.content as string }}
-                           style={styles.imageMenuPreview}
-                           resizeMode="cover"
-                        />
-                        <TouchableOpacity
-                           style={styles.deleteImageButton}
-                           onPress={() => deleteBlock(selectedBlock.id)}
-                        >
+                  <ScrollView
+                     ref={menuScrollViewRef}
+                     style={styles.listMenuItemsContainer}
+                     showsVerticalScrollIndicator={false}
+                  >
+                     {/* Image Preview */}
+                     <View style={[styles.imagePreviewContainer, { minHeight: undefined }]}>
+                        <View style={{ width: '100%', alignItems: 'center', justifyContent: 'center' }}>
+                           <MotiView
+                              animate={{ height: currentHeight }}
+                              transition={{ type: 'timing', duration: 250 }}
+                              style={{ width: '100%', borderRadius: currentBorderRadius === 999 ? 999 : currentBorderRadius, overflow: 'hidden' }}
+                           >
+                              <Image
+                                 source={{ uri: selectedBlock.content as string }}
+                                 style={{ width: '100%', height: '100%' }}
+                                 resizeMode={currentResizeMode as any}
+                              />
+                           </MotiView>
+                        </View>
+                        <TouchableOpacity style={styles.deleteImageButton} onPress={() => deleteBlock(selectedBlock.id)}>
                            <Trash2 size={18} color="white" />
                         </TouchableOpacity>
-                        <TouchableOpacity
-                           style={styles.changeImageButton}
-                           onPress={() => pickImage(selectedBlock.id)}
-                        >
+                        <TouchableOpacity style={styles.changeImageButton} onPress={() => pickImage(selectedBlock.id)}>
                            <Camera size={20} color="white" />
-                           <Text style={styles.changeImageText}>Change Image</Text>
+                           <Text style={styles.changeImageText}>Change</Text>
                         </TouchableOpacity>
-                     </MotiView>
+                     </View>
+
+                     {/* Height Control */}
+                     <View style={styles.imgCtrlSection}>
+                        <Text style={styles.imgCtrlLabel}>Height</Text>
+                        <View style={styles.imgCtrlRow}>
+                           <TouchableOpacity style={styles.imgCtrlBtn} onPress={() => {
+                              const v = Math.max(40, currentHeight - 20);
+                              setBlockStyle(selectedBlock.id, { height: v });
+                              setHeightInput(String(v));
+                           }}>
+                              <Minus size={16} color="#fff" />
+                           </TouchableOpacity>
+                           <View style={styles.imgInputWrap}>
+                              <TextInput
+                                 style={styles.imgDimensionInput}
+                                 value={heightInput}
+                                 onChangeText={setHeightInput}
+                                 onEndEditing={() => {
+                                    if (!heightInput.trim()) {
+                                       setHeightInput(String(selectedBlock.styles?.height || 200));
+                                       return;
+                                    }
+                                    let valInput = parseInt(heightInput);
+                                    if (isNaN(valInput)) {
+                                       setHeightInput(String(selectedBlock.styles?.height || 200));
+                                       return;
+                                    }
+                                    const clampedVal = Math.min(600, Math.max(40, valInput));
+                                    setHeightInput(String(clampedVal));
+                                    setBlockStyle(selectedBlock.id, { height: clampedVal });
+                                 }}
+                                 keyboardType="numeric"
+                                 selectTextOnFocus
+                                 returnKeyType="done"
+                              />
+                              <Text style={styles.imgDimensionUnit}>px</Text>
+                           </View>
+                           <TouchableOpacity style={styles.imgCtrlBtn} onPress={() => {
+                              const v = Math.min(600, currentHeight + 20);
+                              setBlockStyle(selectedBlock.id, { height: v });
+                              setHeightInput(String(v));
+                           }}>
+                              <Plus size={16} color="#fff" />
+                           </TouchableOpacity>
+                        </View>
+                     </View>
+
+                     {/* Size Presets */}
+                     <View style={styles.imgCtrlSection}>
+                        <Text style={styles.imgCtrlLabel}>Size Presets</Text>
+                        <View style={styles.imgPresetRow}>
+                           {sizePresets.map(p => (
+                              <TouchableOpacity
+                                 key={p.label}
+                                 style={[styles.imgPresetBtn, currentHeight === p.h && styles.imgPresetBtnActive]}
+                                 onPress={() => {
+                                    setBlockStyle(selectedBlock.id, { height: p.h });
+                                    setHeightInput(String(p.h));
+                                 }}
+                              >
+                                 <Text style={[styles.imgPresetText, currentHeight === p.h && styles.imgPresetTextActive]}>{p.label}</Text>
+                              </TouchableOpacity>
+                           ))}
+                        </View>
+                     </View>
+
+                     {/* Border Radius */}
+                     <View style={styles.imgCtrlSection}>
+                        <Text style={styles.imgCtrlLabel}>Corner Radius</Text>
+                        <View style={styles.imgPresetRow}>
+                           {radiusPresets.map(p => (
+                              <TouchableOpacity key={p.label} style={[styles.imgPresetBtn, currentBorderRadius === p.val && styles.imgPresetBtnActive]} onPress={() => setBlockStyle(selectedBlock.id, { borderRadius: p.val })}>
+                                 <Text style={[styles.imgPresetText, currentBorderRadius === p.val && styles.imgPresetTextActive]}>{p.label}</Text>
+                              </TouchableOpacity>
+                           ))}
+                        </View>
+                     </View>
+
+                     {/* Resize Mode */}
+                     <View style={styles.imgCtrlSection}>
+                        <Text style={styles.imgCtrlLabel}>Display Mode</Text>
+                        <View style={styles.imgPresetRow}>
+                           {resizeModes.map(m => (
+                              <TouchableOpacity key={m} style={[styles.imgPresetBtn, { flex: 1 }, currentResizeMode === m && styles.imgPresetBtnActive]} onPress={() => updateBlockMetadata(selectedBlock.id, { resizeMode: m })}>
+                                 <Text style={[styles.imgPresetText, currentResizeMode === m && styles.imgPresetTextActive]}>{m.charAt(0).toUpperCase() + m.slice(1)}</Text>
+                              </TouchableOpacity>
+                           ))}
+                        </View>
+                     </View>
+
+                     {/* Caption */}
+                     <View style={styles.imgCtrlSection}>
+                        <Text style={styles.imgCtrlLabel}>Caption</Text>
+                        <TextInput
+                           style={styles.imgCaptionInput}
+                           value={captionInput}
+                           onChangeText={setCaptionInput}
+                           onFocus={() => {
+                              setTimeout(() => menuScrollViewRef.current?.scrollToEnd({ animated: true }), 100);
+                           }}
+                           onBlur={() => {
+                              menuScrollViewRef.current?.scrollTo({ y: 0, animated: true });
+                           }}
+                           onEndEditing={() => updateBlockMetadata(selectedBlock.id, { caption: captionInput })}
+                           placeholder="Add a caption..."
+                           placeholderTextColor="rgba(255,255,255,0.3)"
+                           multiline
+                           returnKeyType="done"
+                           blurOnSubmit={true}
+                        />
+                     </View>
+
+                     <View style={{ height: 350 }} />
                   </ScrollView>
                </View>
             </LinearGradient>
@@ -915,7 +1249,7 @@ export default function EditPage() {
                   style={{ flex: 1 }}
                >
                   <View style={{ flex: 1 }}>
-                     <TouchableWithoutFeedback onPress={handleDeselectBlock}>
+                     <TouchableWithoutFeedback onPress={() => handleDeselectBlock()}>
                         <View style={{ flex: 1 }}>
                            <ScrollView
                               ref={scrollViewRef}
@@ -933,8 +1267,8 @@ export default function EditPage() {
                                     style={styles.addBlockPlaceholder}
                                     onPress={() => addNewBlock({ type: 'paragraph', name: 'Text' })}
                                  >
-                                    <Plus size={24} color="#ccc" />
-                                    <Text style={styles.addBlockText}>Add new content</Text>
+                                    <Plus size={20} color="rgba(0, 25, 65, 0.25)" />
+                                    <Text style={styles.addBlockText}>Tap to add content</Text>
                                  </TouchableOpacity>
                               </View>
                            </ScrollView>
@@ -949,14 +1283,19 @@ export default function EditPage() {
                               keyboardShouldPersistTaps="always"
                            >
                               <View style={styles.toolsContainer}>
-                                 {(selectedBlock ? [{ id: 'delete', name: 'Delete', icon: Trash2, type: 'delete' }, ...editTools] : editTools).map(tool => {
+                                 {(selectedBlock ? [
+                                    { id: 'delete', name: 'Delete', icon: Trash2, type: 'delete' },
+                                    { id: 'move-up', name: 'Up', icon: ArrowUp, type: 'move', direction: 'up' },
+                                    { id: 'move-down', name: 'Down', icon: ArrowDown, type: 'move', direction: 'down' },
+                                    ...editTools
+                                 ] : editTools).map(tool => {
                                     const isStyleApplied = selectedBlock &&
                                        tool.type === 'style' &&
-                                       tool.style &&
-                                       Object.keys(tool.style).every(key => {
+                                       (tool as any).style &&
+                                       Object.keys((tool as any).style).every(key => {
                                           if (!selectedBlock.styles) return false;
                                           const currentVal = selectedBlock.styles[key as keyof BlockStyle];
-                                          const toolVal = (tool.style as any)[key];
+                                          const toolVal = ((tool as any).style as any)[key];
                                           if (key === 'fontWeight') {
                                              return currentVal === toolVal || currentVal === '700';
                                           }
@@ -973,11 +1312,13 @@ export default function EditPage() {
                                           onPress={() => {
                                              if (tool.id === 'delete' && selectedBlock) {
                                                 deleteBlock(selectedBlock.id);
+                                             } else if (tool.type === 'move' && selectedBlock) {
+                                                moveBlock(selectedBlock.id, (tool as any).direction);
                                              } else if (tool.type === 'image') {
                                                 pickImage(selectedBlock?.type === 'image' ? selectedBlock.id : undefined);
                                              } else if (selectedBlock) {
-                                                if (tool.type === 'style' && tool.style) {
-                                                   applyStyle(selectedBlock.id, tool.style);
+                                                if (tool.type === 'style' && (tool as any).style) {
+                                                   applyStyle(selectedBlock.id, (tool as any).style);
                                                 } else if (tool.type === 'list' && selectedBlock.type === 'list') {
                                                    openListMenu();
                                                 } else {
@@ -1139,19 +1480,21 @@ const styles = StyleSheet.create({
    addBlockPlaceholder: {
       height: 70,
       borderWidth: 1.5,
-      borderColor: 'rgba(255, 255, 255, 0.15)',
+      borderColor: 'rgba(0, 25, 65, 0.1)',
       borderStyle: 'dashed',
-      borderRadius: 16,
+      borderRadius: 12,
       justifyContent: 'center',
       alignItems: 'center',
-      marginTop: 24,
-      backgroundColor: 'rgba(255, 255, 255, 0.03)',
+      flexDirection: 'row',
+      marginTop: 20,
+      backgroundColor: 'rgba(0, 25, 65, 0.02)',
       gap: 8,
    },
    addBlockText: {
-      color: 'rgba(255, 255, 255, 0.4)',
-      fontSize: 14,
-      fontWeight: '500',
+      color: 'rgba(0, 25, 65, 0.25)',
+      fontSize: 13,
+      fontWeight: '600',
+      textTransform: "uppercase",
    },
    toolsBar: {
       maxHeight: 110,
@@ -1311,7 +1654,7 @@ const styles = StyleSheet.create({
       top: 0,
       right: 0,
       bottom: 0,
-      width: '90%',
+      width: '100%',
       height: '100%',
       borderTopLeftRadius: 20,
       borderBottomLeftRadius: 20,
@@ -1320,7 +1663,6 @@ const styles = StyleSheet.create({
       shadowOpacity: 0.2,
       elevation: 20,
       zIndex: 1000,
-      overflow: 'hidden',
    },
    listMenuContent: {
       flex: 1,
@@ -1350,7 +1692,11 @@ const styles = StyleSheet.create({
       color: '#FFFFFF',
    },
    closeMenuButton: {
-      padding: 5,
+      padding: 6,
+      backgroundColor: 'rgba(255, 255, 255, 0.08)',
+      borderWidth: 1,
+      borderColor: 'rgba(255, 255, 255, 0.1)',
+      borderRadius: "50%",
    },
    listMenuItemsContainer: {
       flex: 1,
@@ -1364,7 +1710,6 @@ const styles = StyleSheet.create({
       borderWidth: 1,
       borderColor: 'rgba(255, 255, 255, 0.1)',
       padding: 10,
-      paddingLeft: 20,
    },
    itemNumber: {
       fontSize: 14,
@@ -1374,7 +1719,7 @@ const styles = StyleSheet.create({
    },
    listItemInput: {
       flex: 1,
-      fontSize: 14,
+      fontSize: 12,
       color: 'whitesmoke',
       padding: 0,
    },
@@ -1401,8 +1746,11 @@ const styles = StyleSheet.create({
    },
    imagePreviewContainer: {
       width: '100%',
-      minHeight: 250,
-      backgroundColor: '#000',
+      minHeight: 180,
+      backgroundColor: 'rgba(255, 255, 255, 0.08)',
+      borderWidth: 1,
+      borderColor: 'rgba(255, 255, 255, 0.1)',
+      padding: 14,
       borderRadius: 12,
       overflow: 'hidden',
       marginBottom: 20,
@@ -1411,12 +1759,15 @@ const styles = StyleSheet.create({
    imageMenuPreview: {
       width: '100%',
       height: '100%',
+      borderRadius: 8,
    },
    changeImageButton: {
       position: 'absolute',
-      bottom: 10,
-      right: 10,
-      backgroundColor: 'rgba(0, 25, 65, 0.8)',
+      bottom: 20,
+      right: 20,
+      backgroundColor: 'rgba(0, 0, 0, .7)',
+      borderWidth: 1,
+      borderColor: 'rgba(255, 255, 255, 0.1)',
       flexDirection: 'row',
       alignItems: 'center',
       paddingHorizontal: 12,
@@ -1425,9 +1776,9 @@ const styles = StyleSheet.create({
    },
    deleteImageButton: {
       position: 'absolute',
-      top: 10,
-      right: 10,
-      backgroundColor: 'rgba(239, 68, 68, 0.98)',
+      top: 6,
+      right: 6,
+      backgroundColor: 'rgba(239, 68, 68)',
       width: 36,
       height: 36,
       borderRadius: 18,
@@ -1492,5 +1843,100 @@ const styles = StyleSheet.create({
    },
    layoutOptionTextActive: {
       color: '#001941',
+   },
+   // Image Edit Menu Controls
+   imgCtrlSection: {
+      marginTop: 16,
+   },
+   imgCtrlLabel: {
+      color: 'rgba(255, 255, 255, 0.6)',
+      fontSize: 12,
+      fontWeight: '600',
+      textTransform: 'uppercase',
+      letterSpacing: 1,
+      marginBottom: 8,
+   },
+   imgCtrlRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 16,
+   },
+   imgCtrlBtn: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: 'rgba(255, 255, 255, 0.1)',
+      borderWidth: 1,
+      borderColor: 'rgba(255, 255, 255, 0.15)',
+      justifyContent: 'center',
+      alignItems: 'center',
+   },
+   imgCtrlValue: {
+      color: '#FFFFFF',
+      fontSize: 16,
+      fontWeight: '700',
+      minWidth: 60,
+      textAlign: 'center',
+   },
+   imgInputWrap: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: 'rgba(255, 255, 255, 0.1)',
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: 'rgba(255, 255, 255, 0.15)',
+      paddingHorizontal: 10,
+      minWidth: 80,
+   },
+   imgDimensionInput: {
+      color: '#FFFFFF',
+      fontSize: 16,
+      fontWeight: '700',
+      textAlign: 'center',
+      paddingVertical: 6,
+      minWidth: 40,
+   },
+   imgDimensionUnit: {
+      color: 'rgba(255, 255, 255, 0.4)',
+      fontSize: 13,
+      fontWeight: '600',
+      marginLeft: 2,
+   },
+   imgPresetRow: {
+      flexDirection: 'row',
+      gap: 8,
+   },
+   imgPresetBtn: {
+      paddingVertical: 8,
+      paddingHorizontal: 14,
+      borderRadius: 10,
+      backgroundColor: 'rgba(255, 255, 255, 0.08)',
+      borderWidth: 1,
+      borderColor: 'rgba(255, 255, 255, 0.1)',
+      alignItems: 'center',
+   },
+   imgPresetBtnActive: {
+      backgroundColor: 'rgba(255, 215, 0, 0.2)',
+      borderColor: '#FFD700',
+   },
+   imgPresetText: {
+      color: 'rgba(255, 255, 255, 0.7)',
+      fontSize: 13,
+      fontWeight: '600',
+   },
+   imgPresetTextActive: {
+      color: '#FFD700',
+   },
+   imgCaptionInput: {
+      backgroundColor: 'rgba(255, 255, 255, 0.08)',
+      borderWidth: 1,
+      borderColor: 'rgba(255, 255, 255, 0.1)',
+      borderRadius: 10,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      color: '#FFFFFF',
+      fontSize: 14,
+      minHeight: 50,
    },
 });
