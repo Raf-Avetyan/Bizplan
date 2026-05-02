@@ -3,6 +3,8 @@ import { AuthModule } from './auth/auth.module';
 import { ConfigModule } from '@nestjs/config';
 import { BusinessPlansModule } from './company/company.module';
 import { UserModule } from './user/user.module';
+import { AccountDataModule } from './account-data/account-data.module';
+import { ImageGenerationModule } from './image-generation/image-generation.module';
 
 @Module({
   imports: [
@@ -11,7 +13,9 @@ import { UserModule } from './user/user.module';
     }),
     AuthModule,
     BusinessPlansModule,
-    UserModule
+    UserModule,
+    AccountDataModule,
+    ImageGenerationModule
   ],
   controllers: [],
   providers: [],

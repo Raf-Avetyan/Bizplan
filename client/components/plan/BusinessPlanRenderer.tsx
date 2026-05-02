@@ -7,7 +7,9 @@ import {
    ActivityIndicator,
    Image,
    Pressable,
+   RefreshControlProps,
    TouchableOpacity,
+   useColorScheme,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
@@ -20,6 +22,7 @@ import { Image as LucideImage, MoreHorizontal, Upload } from 'lucide-react-nativ
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
+import { useSettings } from '@/lib/settings-context';
 
 type BusinessPlanRendererProps = {
    businessPlan: BusinessPlanTemplate;
@@ -27,6 +30,7 @@ type BusinessPlanRendererProps = {
    onScroll?: (event: any) => void;
    initialLoadCount?: number;
    loadMoreCount?: number;
+   refreshControl?: React.ReactElement<RefreshControlProps>;
 };
 
 export const tableOfContents = [
@@ -99,34 +103,84 @@ export const tableOfContents = [
    },
 ];
 
-export const renderBlockContent = (block: PageBlock, key: number) => {
+const SCALE_KEYS = new Set([
+   'fontSize',
+   'margin',
+   'marginTop',
+   'marginRight',
+   'marginBottom',
+   'marginLeft',
+   'marginVertical',
+   'marginHorizontal',
+   'padding',
+   'paddingTop',
+   'paddingRight',
+   'paddingBottom',
+   'paddingLeft',
+   'paddingVertical',
+   'paddingHorizontal',
+   'letterSpacing',
+   'height',
+   'minHeight',
+   'maxHeight',
+   'borderRadius',
+]);
+
+const scaleStyleObject = (style: any, factor: number) => {
+   if (!style || factor >= 1 || typeof style !== 'object') {
+      return style;
+   }
+
+   const scaled: Record<string, any> = {};
+   for (const [key, value] of Object.entries(style)) {
+      if (typeof value === 'number' && SCALE_KEYS.has(key)) {
+         scaled[key] = Math.max(1, value * factor);
+      } else {
+         scaled[key] = value;
+      }
+   }
+
+   return scaled;
+};
+
+export const renderBlockContent = (block: PageBlock, key: number, contentScale: number = 1) => {
+   const scaledBlockStyles = scaleStyleObject(block.styles, contentScale);
+   const compactHeadingStyle = contentScale < 1 ? { fontSize: Math.max(13, 24 * contentScale + 4), lineHeight: Math.max(18, 28 * contentScale + 8) } : null;
+   const compactTextStyle = contentScale < 1 ? { fontSize: Math.max(11, 14 * contentScale + 4), lineHeight: Math.max(16, 20 * contentScale + 8) } : null;
+   const compactListStyle = contentScale < 1 ? { fontSize: Math.max(11, 14 * contentScale + 4), lineHeight: Math.max(16, 20 * contentScale + 8) } : null;
+   const compactBlockSpacing = contentScale < 1 ? { marginBottom: 5, marginTop: 0, marginVertical: 2 } : null;
+   const compactBulletStyle = contentScale < 1 ? { fontSize: Math.max(6, 16 * contentScale), marginRight: 3 } : null;
+   const compactListItemStyle = contentScale < 1 ? { marginBottom: 1 } : null;
    switch (block.type) {
       case 'heading':
          return (
-            <Text style={[styles.headingText, block.styles]} key={key}>
+            <Text style={[styles.headingText, compactBlockSpacing, scaledBlockStyles, compactHeadingStyle]} key={key}>
                {typeof block.content === 'string' ? block.content : 'Heading'}
             </Text>
          );
       case 'paragraph':
          return (
-            <Text style={[styles.paragraphText, block.styles]} key={key}>
+            <Text style={[styles.paragraphText, compactBlockSpacing, scaledBlockStyles, compactTextStyle]} key={key}>
                {typeof block.content === 'string' ? block.content : 'Paragraph'}
             </Text>
          );
       case 'list':
          const items = Array.isArray(block.content) ? block.content : [];
+         const renderListItems = (columnItems: any[]) => (
+            columnItems.map((item, index) => (
+               <View key={`${index}-${String(item)}`} style={[styles.listItem, compactListItemStyle]}>
+                  <Text style={[styles.bullet, compactBulletStyle]}>•</Text>
+                  <Text style={[styles.listText, scaledBlockStyles, compactListStyle]}>{item}</Text>
+               </View>
+            ))
+         );
          return (
-            <View style={block.styles} key={key}>
-               {items.map((item, index) => (
-                  <View key={index} style={styles.listItem}>
-                     <Text style={styles.bullet}>•</Text>
-                     <Text style={[styles.listText, block.styles]}>{item}</Text>
-                  </View>
-               ))}
+            <View style={[compactBlockSpacing, scaledBlockStyles]} key={key}>
+               {renderListItems(items)}
             </View>
          );
       case 'divider':
-         return <View style={[styles.divider, block.styles]} key={key} />;
+         return <View style={[styles.divider, scaledBlockStyles]} key={key} />;
       case 'image':
          const hasImage = typeof block.content === 'string' && (
             block.content.startsWith('http') ||
@@ -144,7 +198,7 @@ export const renderBlockContent = (block: PageBlock, key: number) => {
                   : {};
          return (
             <View key={key}>
-               <View style={[styles.imageContainer, block.styles, { height: block.styles?.height || 200, padding: 0, borderRadius: imgBorderRadius === 999 ? Number(block.styles?.height || 200) : imgBorderRadius, overflow: 'hidden' as const }, borderFrameStyle]}>
+               <View style={[styles.imageContainer, scaledBlockStyles, { height: scaledBlockStyles?.height || 200, padding: 0, borderRadius: imgBorderRadius === 999 ? Number(scaledBlockStyles?.height || 200) : imgBorderRadius, overflow: 'hidden' as const }, borderFrameStyle]}>
                   {hasImage ? (
                      <Image
                         source={{ uri: block.content as string }}
@@ -160,12 +214,12 @@ export const renderBlockContent = (block: PageBlock, key: number) => {
                      </View>
                   )}
                </View>
-               {imgCaption ? <Text style={{ fontSize: 11, color: '#888', textAlign: 'center', marginTop: 4, fontStyle: 'italic' }}>{imgCaption}</Text> : null}
+               {imgCaption ? <Text style={{ fontSize: contentScale < 1 ? Math.max(8, 11 * contentScale) : 11, color: '#888', textAlign: 'center', marginTop: 4, fontStyle: 'italic' }}>{imgCaption}</Text> : null}
             </View>
          );
       default:
          return (
-            <Text style={[styles.defaultText, block.styles]} key={key}>
+            <Text style={[styles.defaultText, compactBlockSpacing, scaledBlockStyles, compactTextStyle]} key={key}>
                {typeof block.content === 'string' ? block.content : JSON.stringify(block.content)}
             </Text>
          );
@@ -178,10 +232,17 @@ const BusinessPlanRenderer = forwardRef<ScrollView, BusinessPlanRendererProps>((
    onScroll,
    initialLoadCount = 1,
    loadMoreCount = 2,
+   refreshControl,
 }, ref) => {
    const {
       data: activeCompany,
    } = useActiveCompany();
+   const { settings } = useSettings();
+   const colorScheme = useColorScheme();
+   const resolvedTheme =
+      settings.theme === 'system' ? (colorScheme === 'light' ? 'light' : 'dark') : settings.theme;
+   const isDark = resolvedTheme === 'dark';
+   const palette = getRendererPalette(isDark);
 
    const [isNavigating, setIsNavigating] = useState(false);
    const [lastClickedPage, setLastClickedPage] = useState<number | null>(null);
@@ -486,11 +547,21 @@ const BusinessPlanRenderer = forwardRef<ScrollView, BusinessPlanRendererProps>((
          if (visiblePages.length === 0) return null;
 
          return (
-            <View key={section.id} style={styles.sectionContainer}>
-               <Text style={styles.sectionHeader}>{section.title}</Text>
+            <View key={section.id} style={[styles.sectionContainer, { backgroundColor: palette.sectionCard, borderColor: palette.border }]}>
+               <View style={styles.sectionHeaderRow}>
+                  <View>
+                     <Text style={[styles.sectionEyebrow, { color: palette.eyebrow }]}>Plan section</Text>
+                     <Text style={[styles.sectionHeader, { color: palette.text }]}>{section.title}</Text>
+                  </View>
+                  <Text style={[styles.sectionCount, { color: palette.muted }]}>
+                     {sectionPages.length} pages
+                  </Text>
+               </View>
 
                <View style={styles.pagesRow}>
                   {visiblePages.map((page: Page) => {
+                     const isDocumentSection = section.id === 'document';
+                     const contentScale = isDocumentSection ? 1 : 0.35;
                      let pageContent;
 
                      switch (page.type) {
@@ -560,7 +631,7 @@ const BusinessPlanRenderer = forwardRef<ScrollView, BusinessPlanRendererProps>((
                         case 'content':
                            pageContent = (
                               <View style={styles.pageContent}>
-                                 {page.blocks.map((block: PageBlock, key: number) => renderBlockContent(block, key))}
+                                 {page.blocks.map((block: PageBlock, key: number) => renderBlockContent(block, key, contentScale))}
                               </View>
                            );
                            break;
@@ -568,7 +639,7 @@ const BusinessPlanRenderer = forwardRef<ScrollView, BusinessPlanRendererProps>((
                         default:
                            pageContent = (
                               <View style={styles.pageContent}>
-                                 {page.blocks?.map((block: PageBlock, key: number) => renderBlockContent(block, key))}
+                                 {page.blocks?.map((block: PageBlock, key: number) => renderBlockContent(block, key, contentScale))}
                                  <View style={styles.pageFooter}>
                                     <Text style={styles.pageNumber}>{page.pageNumber}</Text>
                                     <Text style={styles.pageTitleFooter}>{page.title}</Text>
@@ -589,7 +660,7 @@ const BusinessPlanRenderer = forwardRef<ScrollView, BusinessPlanRendererProps>((
                            disabled={isNavigating}
                         >
                            <View style={styles.pageWrapper}>
-                              <View style={styles.pageContainer}>
+                              <View style={[styles.pageContainer, { backgroundColor: palette.previewShell, borderColor: palette.pageBorder }]}>
                                  {(page.type !== 'toc' && page.type !== 'cover') && (
                                     <LinearGradient
                                        colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.8)', 'rgba(255,255,255,1)']}
@@ -597,7 +668,7 @@ const BusinessPlanRenderer = forwardRef<ScrollView, BusinessPlanRendererProps>((
                                        style={styles.pageGradientOverlay}
                                     />
                                  )}
-                                 <View style={styles.pageShadow} />
+                                 <View style={[styles.pageShadow, { backgroundColor: palette.pageShadow }]} />
                                  <View style={styles.page}>
                                     {pageContent}
                                  </View>
@@ -609,7 +680,7 @@ const BusinessPlanRenderer = forwardRef<ScrollView, BusinessPlanRendererProps>((
 
                   {isLoadingThisSection && (
                      Array.from({ length: remainingCount }).map((_, index) => (
-                        <MotiView
+                     <MotiView
                            key={`skeleton-${index}`}
                            from={{ opacity: 0.3 }}
                            animate={{ opacity: 0.6 }}
@@ -621,14 +692,14 @@ const BusinessPlanRenderer = forwardRef<ScrollView, BusinessPlanRendererProps>((
                            }}
                            style={styles.pageSkeletonWrapper}
                         >
-                           <View style={styles.pageSkeleton}>
-                              <View style={styles.skeletonTitle} />
+                           <View style={[styles.pageSkeleton, { backgroundColor: palette.card, borderColor: palette.border }]}>
+                              <View style={[styles.skeletonTitle, { backgroundColor: palette.skeleton }]} />
                               <View style={styles.skeletonContent}>
-                                 <View style={styles.skeletonLine} />
-                                 <View style={styles.skeletonLineShort} />
-                                 <View style={[styles.skeletonLine, { marginTop: 20 }]} />
-                                 <View style={styles.skeletonLine} />
-                                 <View style={styles.skeletonLineShort} />
+                                 <View style={[styles.skeletonLine, { backgroundColor: palette.skeletonSoft }]} />
+                                 <View style={[styles.skeletonLineShort, { backgroundColor: palette.skeletonSoft }]} />
+                                 <View style={[styles.skeletonLine, { marginTop: 20, backgroundColor: palette.skeletonSoft }]} />
+                                 <View style={[styles.skeletonLine, { backgroundColor: palette.skeletonSoft }]} />
+                                 <View style={[styles.skeletonLineShort, { backgroundColor: palette.skeletonSoft }]} />
                               </View>
                            </View>
                         </MotiView>
@@ -637,13 +708,13 @@ const BusinessPlanRenderer = forwardRef<ScrollView, BusinessPlanRendererProps>((
 
                   {hasMore && !isLoadingThisSection && (
                      <TouchableOpacity
-                        style={styles.loadMoreButton}
+                           style={[styles.loadMoreButton, { backgroundColor: palette.chip, borderColor: palette.border }]}
                         onPress={() => handleLoadMore(section.id, sectionPages.length)}
                      >
-                        <Text style={styles.loadMoreText}>
+                        <Text style={[styles.loadMoreText, { color: palette.text }]}>
                            Load {remainingCount} More {remainingCount === 1 ? 'Page' : 'Pages'}
                         </Text>
-                        <Text style={styles.loadMoreSubtext}>
+                        <Text style={[styles.loadMoreSubtext, { color: palette.muted }]}>
                            Show all {sectionPages.length} pages
                         </Text>
                      </TouchableOpacity>
@@ -662,6 +733,7 @@ const BusinessPlanRenderer = forwardRef<ScrollView, BusinessPlanRendererProps>((
          style={styles.container}
          showsVerticalScrollIndicator={true}
          contentContainerStyle={styles.scrollContent}
+         refreshControl={refreshControl}
       >
          {isExporting && (
             <View style={styles.exportOverlay}>
@@ -670,13 +742,37 @@ const BusinessPlanRenderer = forwardRef<ScrollView, BusinessPlanRendererProps>((
             </View>
          )}
 
+         <View style={[styles.planHero, { backgroundColor: palette.heroCard, borderColor: palette.border }]}>
+            <Text style={[styles.planHeroEyebrow, { color: palette.eyebrow }]}>Business plan</Text>
+            <Text style={[styles.planHeroTitle, { color: palette.text }]}>
+               {activeCompany?.businessName || businessPlan.metadata.business_name}
+            </Text>
+            <Text style={[styles.planHeroBody, { color: palette.muted }]}>
+               Tap any page preview to open the editor. Export your full plan from the menu.
+            </Text>
+            <View style={styles.planHeroStats}>
+               <View style={[styles.planHeroPill, { backgroundColor: palette.chip, borderColor: palette.border }]}>
+                  <Text style={[styles.planHeroPillValue, { color: palette.text }]}>
+                     {businessPlan.presentation?.pages?.length ?? 0}
+                  </Text>
+                  <Text style={[styles.planHeroPillLabel, { color: palette.muted }]}>Pages</Text>
+               </View>
+               <View style={[styles.planHeroPill, { backgroundColor: palette.chip, borderColor: palette.border }]}>
+                  <Text style={[styles.planHeroPillValue, { color: palette.text }]}>
+                     {businessPlan.presentation?.sections?.length ?? 0}
+                  </Text>
+                  <Text style={[styles.planHeroPillLabel, { color: palette.muted }]}>Sections</Text>
+               </View>
+            </View>
+         </View>
+
          <View style={styles.topActions} pointerEvents="box-none">
             <TouchableOpacity
-               style={styles.actionButtonContainer}
+               style={[styles.actionButton, { backgroundColor: palette.card, borderColor: palette.border }]}
+               onPress={() => setShowMenu(!showMenu)}
+               activeOpacity={0.8}
             >
-               <TouchableOpacity style={styles.actionButton} onPress={() => setShowMenu(!showMenu)}>
-                  <MoreHorizontal size={22} color="#eee" />
-               </TouchableOpacity>
+               <MoreHorizontal size={22} color={palette.text} />
             </TouchableOpacity>
 
             <AnimatePresence>
@@ -691,46 +787,20 @@ const BusinessPlanRenderer = forwardRef<ScrollView, BusinessPlanRendererProps>((
                         animate={{ opacity: 1, scale: 1, translateY: 0 }}
                         exit={{ opacity: 0, scale: 0.9, translateY: -10 }}
                         transition={{ type: 'timing', duration: 150 }}
-                        style={styles.dropdownMenuWrapper}
+                        style={[styles.dropdownMenuWrapper, { backgroundColor: palette.menu, borderColor: palette.border }]}
                      >
                         <TouchableOpacity
-                           style={styles.menuOption}
+                           style={[styles.menuOption, { backgroundColor: palette.chip }]}
                            onPress={() => {
                               setShowMenu(false);
                               exportToPdf();
                            }}
                            activeOpacity={0.6}
                         >
-                           <View style={styles.menuIconCircle}>
-                              <Upload size={18} color="#eee" />
+                           <View style={[styles.menuIconCircle, { backgroundColor: palette.iconCircle }]}>
+                              <Upload size={18} color={palette.text} />
                            </View>
-                           <Text style={styles.menuOptionText}>Export to PDF</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                           style={styles.menuOption}
-                           onPress={() => {
-                              setShowMenu(false);
-                              exportToPdf();
-                           }}
-                           activeOpacity={0.6}
-                        >
-                           <View style={styles.menuIconCircle}>
-                              <Upload size={18} color="#eee" />
-                           </View>
-                           <Text style={styles.menuOptionText}>Export to PDF</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                           style={styles.menuOption}
-                           onPress={() => {
-                              setShowMenu(false);
-                              exportToPdf();
-                           }}
-                           activeOpacity={0.6}
-                        >
-                           <View style={styles.menuIconCircle}>
-                              <Upload size={18} color="#eee" />
-                           </View>
-                           <Text style={styles.menuOptionText}>Export to PDF</Text>
+                           <Text style={[styles.menuOptionText, { color: palette.text }]}>Export to PDF</Text>
                         </TouchableOpacity>
                      </MotiView>
                   </>
@@ -744,30 +814,116 @@ const BusinessPlanRenderer = forwardRef<ScrollView, BusinessPlanRendererProps>((
    );
 });
 
+function getRendererPalette(isDark: boolean) {
+   return {
+      text: isDark ? '#FFFFFF' : '#0F172A',
+      muted: isDark ? '#CBD5E1' : '#475569',
+      eyebrow: isDark ? 'rgba(229,231,235,0.62)' : '#64748B',
+      card: isDark ? 'rgba(15,23,42,0.84)' : 'rgba(255,255,255,0.92)',
+      heroCard: isDark ? 'rgba(15,23,42,0.82)' : 'rgba(255,255,255,0.92)',
+      sectionCard: isDark ? 'rgba(15,23,42,0.56)' : 'rgba(255,255,255,0.72)',
+      chip: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.045)',
+      border: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(15,23,42,0.10)',
+      pageBorder: isDark ? 'rgba(255,255,255,0.14)' : 'rgba(15,23,42,0.12)',
+      previewShell: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(15,23,42,0.035)',
+      pageShadow: isDark ? 'rgba(0,0,0,0.22)' : 'rgba(15,23,42,0.08)',
+      menu: isDark ? 'rgba(15,23,42,0.96)' : 'rgba(255,255,255,0.98)',
+      iconCircle: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(77,47,178,0.10)',
+      skeleton: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(15,23,42,0.14)',
+      skeletonSoft: isDark ? 'rgba(255,255,255,0.065)' : 'rgba(15,23,42,0.08)',
+   };
+}
+
 const styles = StyleSheet.create({
    container: {
       flex: 1,
    },
    scrollContent: {
-      paddingVertical: 15,
-      paddingHorizontal: 10,
+      paddingTop: 14,
+      paddingBottom: 15,
+      paddingHorizontal: 12,
+   },
+   planHero: {
+      marginBottom: 18,
+      borderRadius: 28,
+      borderWidth: 1,
+      padding: 18,
+      gap: 10,
+   },
+   planHeroEyebrow: {
+      fontSize: 11,
+      fontWeight: '800',
+      letterSpacing: 1.2,
+      textTransform: 'uppercase',
+   },
+   planHeroTitle: {
+      fontSize: 30,
+      lineHeight: 34,
+      fontWeight: '900',
+   },
+   planHeroBody: {
+      fontSize: 13,
+      lineHeight: 20,
+   },
+   planHeroStats: {
+      flexDirection: 'row',
+      gap: 10,
+      marginTop: 2,
+   },
+   planHeroPill: {
+      flex: 1,
+      borderRadius: 18,
+      borderWidth: 1,
+      padding: 12,
+   },
+   planHeroPillValue: {
+      fontSize: 20,
+      fontWeight: '900',
+   },
+   planHeroPillLabel: {
+      marginTop: 2,
+      fontSize: 12,
+      fontWeight: '700',
    },
    sectionContainer: {
-      marginBottom: 30,
+      marginBottom: 18,
+      borderRadius: 28,
+      borderWidth: 1,
+      paddingTop: 16,
+      paddingBottom: 6,
+   },
+   sectionHeaderRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      justifyContent: 'space-between',
+      gap: 12,
+      paddingHorizontal: 16,
+      marginBottom: 16,
+   },
+   sectionEyebrow: {
+      fontSize: 10,
+      fontWeight: '800',
+      letterSpacing: 1,
+      textTransform: 'uppercase',
+      marginBottom: 4,
    },
    sectionHeader: {
       fontSize: 22,
-      fontWeight: 'bold',
-      color: 'white',
-      marginBottom: 24,
-      paddingHorizontal: 16,
+      lineHeight: 26,
+      fontWeight: '900',
+   },
+   sectionCount: {
+      fontSize: 12,
+      fontWeight: '800',
+      paddingHorizontal: 10,
+      paddingVertical: 6,
    },
    pagesRow: {},
    pagesWrapper: {},
    pageWrapper: {
       alignItems: 'center',
-      marginBottom: 20,
-      borderRadius: 12
+      marginBottom: 14,
+      borderRadius: 18
    },
    pageGradientOverlay: {
       position: 'absolute',
@@ -779,11 +935,11 @@ const styles = StyleSheet.create({
       backgroundColor: 'transparent',
    },
    pageContainer: {
-      width: '90%',
+      width: '92%',
       position: 'relative',
       overflow: "hidden",
-      borderRadius: 18,
-      borderWidth: 2,
+      borderRadius: 24,
+      borderWidth: 1,
       borderColor: '#e8e8e8',
    },
    pageShadow: {
@@ -797,7 +953,7 @@ const styles = StyleSheet.create({
    page: {
       backgroundColor: '#ffffff',
       padding: 20,
-      height: 480,
+      height: 430,
       overflow: "hidden",
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 2 },
@@ -1057,14 +1213,12 @@ const styles = StyleSheet.create({
       color: '#333',
    },
    loadMoreButton: {
-      backgroundColor: 'rgba(255,255,255,0.1)',
       padding: 15,
-      borderRadius: 8,
+      borderRadius: 18,
       marginVertical: 10,
       marginHorizontal: 16,
       alignItems: 'center',
       borderWidth: 1,
-      borderColor: 'rgba(255,255,255,0.2)',
       borderStyle: 'dashed',
    },
    loadMoreText: {
@@ -1119,26 +1273,20 @@ const styles = StyleSheet.create({
    },
    topActions: {
       position: 'absolute',
-      top: 10,
+      top: 24,
       left: 0,
       right: 25,
       bottom: 0,
       zIndex: 1000,
       alignItems: 'flex-end',
    },
-   actionButtonContainer: {
-      borderRadius: 21,
-      overflow: 'hidden',
-   },
    actionButton: {
       width: 42,
       height: 42,
-      borderRadius: 21,
-      backgroundColor: 'rgba(255, 255, 255, 0.1)',
+      borderRadius: 15,
       justifyContent: 'center',
       alignItems: 'center',
       borderWidth: 1,
-      borderColor: 'rgba(255,255,255,0.2)',
       overflow: 'hidden',
    },
    dropdownMenuWrapper: {
@@ -1146,7 +1294,6 @@ const styles = StyleSheet.create({
       top: 50,
       right: 0,
       width: 200,
-      backgroundColor: '#4e2fb2e6',
       borderRadius: 22,
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 12 },
@@ -1158,7 +1305,6 @@ const styles = StyleSheet.create({
       display: "flex",
       gap: 4,
       borderWidth: 1,
-      borderColor: 'rgba(255, 255, 255, .15)',
       overflow: 'hidden',
    },
    menuOption: {

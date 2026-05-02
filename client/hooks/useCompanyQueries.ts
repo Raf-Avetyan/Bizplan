@@ -5,11 +5,30 @@ import { companyService } from '@/services/company.service';
 export const useActiveCompany = () => {
    return useQuery({
       queryKey: ['activeCompany'],
-      queryFn: () => companyService.getActive() as unknown as Company,
+      queryFn: () => companyService.getActive(),
       staleTime: 1000 * 60 * 5,
       gcTime: 1000 * 60 * 10,
       refetchOnWindowFocus: true,
       refetchOnMount: true,
+   });
+};
+
+export const useCompanies = () => {
+   return useQuery({
+      queryKey: ['companies'],
+      queryFn: () => companyService.getAll(),
+      staleTime: 1000 * 60 * 5,
+      gcTime: 1000 * 60 * 10,
+      refetchOnWindowFocus: true,
+   });
+};
+
+export const useSearchCompanies = (searchTerm: string) => {
+   return useQuery({
+      queryKey: ['companies', 'search', searchTerm],
+      queryFn: () => companyService.search(searchTerm),
+      enabled: searchTerm.trim().length > 0,
+      staleTime: 1000 * 30,
    });
 };
 
@@ -40,9 +59,37 @@ export const useCreateCompany = (onCreated?: () => void) => {
 
          queryClient.setQueryData(['activeCompany'], newPlan);
          queryClient.invalidateQueries({ queryKey: ['activeCompany'] });
+         queryClient.invalidateQueries({ queryKey: ['companies'] });
          queryClient.invalidateQueries({ queryKey: ['companyAdditionalData'] });
 
          return newPlan;
+      },
+   });
+};
+
+export const useSetActiveCompany = () => {
+   const queryClient = useQueryClient();
+
+   return useMutation({
+      mutationFn: (companyId: string) => companyService.setActive(companyId),
+      onSuccess: (company) => {
+         queryClient.setQueryData(['activeCompany'], company);
+         queryClient.invalidateQueries({ queryKey: ['activeCompany'] });
+         queryClient.invalidateQueries({ queryKey: ['companies'] });
+         queryClient.invalidateQueries({ queryKey: ['companyAdditionalData'] });
+      },
+   });
+};
+
+export const useDeleteCompany = () => {
+   const queryClient = useQueryClient();
+
+   return useMutation({
+      mutationFn: (companyId: string) => companyService.delete(companyId),
+      onSuccess: async () => {
+         queryClient.invalidateQueries({ queryKey: ['companies'] });
+         queryClient.invalidateQueries({ queryKey: ['activeCompany'] });
+         queryClient.invalidateQueries({ queryKey: ['companyAdditionalData'] });
       },
    });
 };
@@ -51,13 +98,8 @@ export const useUpdateCompanyAdditionalData = () => {
 
    return useMutation({
       mutationFn: ({ companyId, data }: { companyId: string; data: any }) =>
-         companyService.updateAdditionalDataKey(companyId, 'business_plan', data),
-      onSuccess: (updatedData, variables) => {
-         queryClient.setQueryData(
-            ['companyAdditionalData', variables.companyId],
-            updatedData
-         );
-
+         companyService.setAdditionalDataValue(companyId, 'business_plan', data),
+      onSuccess: (_, variables) => {
          queryClient.invalidateQueries({
             queryKey: ['companyAdditionalData', variables.companyId]
          });
@@ -74,13 +116,8 @@ export const useAddBusinessPlan = () => {
 
    return useMutation({
       mutationFn: ({ companyId, data }: { companyId: string; data: any }) =>
-         companyService.addAdditionalDataKey(companyId, 'business_plan', data),
-      onSuccess: (updatedData, variables) => {
-         queryClient.setQueryData(
-            ['companyAdditionalData', variables.companyId],
-            updatedData
-         );
-
+         companyService.saveBusinessPlanData(companyId, data),
+      onSuccess: (_, variables) => {
          queryClient.invalidateQueries({
             queryKey: ['companyAdditionalData', variables.companyId]
          });

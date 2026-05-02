@@ -2,6 +2,21 @@ import { businessPlanEndpoints } from '@/api/endpoints/companies.endpoints';
 import { AdditionalDataResponse, ApiResponse, Company, CompanyAdditionalDataDto, CompanyFinancialDataDto, CreateCompanyDto, UpdateCompanyDto } from '@/types/company.types';
 
 class CompanyService {
+   private unwrapResponse<T>(response: ApiResponse<T>, fallbackMessage: string): T {
+      if (response?.success && response.data !== undefined && response.data !== null) {
+         return response.data;
+      }
+
+      const error: Error & { statusCode?: number; status?: number } = new Error(
+         response?.error || response?.message || fallbackMessage
+      );
+      if (response?.statusCode) {
+         error.statusCode = response.statusCode;
+         error.status = response.statusCode;
+      }
+      throw error;
+   }
+
    async create(data: CreateCompanyDto): Promise<Company> {
       const response: ApiResponse<Company> = await businessPlanEndpoints.create(data);
       return response.data!;
@@ -41,8 +56,8 @@ class CompanyService {
 
    async getActive(): Promise<Company | null> {
       try {
-         const response: ApiResponse<Company> = await businessPlanEndpoints.getActive();
-         return response.data!;
+         const response: ApiResponse<Company | null> = await businessPlanEndpoints.getActive();
+         return response?.data ?? null;
       } catch (error: any) {
          if (error?.status === 404 || error?.statusCode === 404) {
             return null;
@@ -54,6 +69,14 @@ class CompanyService {
    async addFinancialData(id: string, financialData: CompanyFinancialDataDto): Promise<Company> {
       const response: ApiResponse<Company> = await businessPlanEndpoints.addFinancialData(id, financialData);
       return response.data!;
+   }
+
+   async generateBusinessPlan(id: string, options?: { sections?: string[]; overwrite?: boolean }): Promise<AdditionalDataResponse> {
+      const response: ApiResponse<AdditionalDataResponse> = await businessPlanEndpoints.generateBusinessPlan(id, options);
+      if (!response.success) {
+         throw new Error(response.error || response.message || 'Failed to generate business plan');
+      }
+      return response.data || {};
    }
 
    async search(searchTerm: string): Promise<Company[]> {
@@ -85,32 +108,35 @@ class CompanyService {
 
    async getAdditionalData(id: string): Promise<AdditionalDataResponse> {
       const response: ApiResponse<AdditionalDataResponse> = await businessPlanEndpoints.getAdditionalData(id);
-      return response.data! || {};
+      if (!response?.success) {
+         throw new Error(response?.error || response?.message || 'Failed to get additional data');
+      }
+      return response.data || {};
    }
 
    async updateAdditionalData(id: string, data: AdditionalDataResponse): Promise<Company> {
       const response: ApiResponse<Company> = await businessPlanEndpoints.updateAdditionalData(id, data);
-      return response.data!;
+      return this.unwrapResponse(response, 'Failed to update additional data');
    }
 
    async patchAdditionalData(id: string, data: AdditionalDataResponse): Promise<Company> {
       const response: ApiResponse<Company> = await businessPlanEndpoints.patchAdditionalData(id, data);
-      return response.data!;
+      return this.unwrapResponse(response, 'Failed to patch additional data');
    }
 
    async removeAdditionalDataKey(id: string, key: string): Promise<Company> {
       const response: ApiResponse<Company> = await businessPlanEndpoints.removeAdditionalDataKey(id, key);
-      return response.data!;
+      return this.unwrapResponse(response, `Failed to remove additional data key "${key}"`);
    }
 
    async addAdditionalDataKey(id: string, key: string, value: any): Promise<Company> {
       const response: ApiResponse<Company> = await businessPlanEndpoints.addAdditionalDataKey(id, key, value);
-      return response.data!;
+      return this.unwrapResponse(response, `Failed to add additional data key "${key}"`);
    }
 
    async updateAdditionalDataKey(id: string, key: string, value: any): Promise<Company> {
       const response: ApiResponse<Company> = await businessPlanEndpoints.updateAdditionalDataKey(id, key, value);
-      return response.data!;
+      return this.unwrapResponse(response, `Failed to update additional data key "${key}"`);
    }
 
    async getAdditionalDataKeys(id: string): Promise<string[]> {
@@ -140,7 +166,8 @@ class CompanyService {
       try {
          return await this.updateAdditionalDataKey(id, key, value);
       } catch (error: any) {
-         if (error?.status === 404 || error?.statusCode === 404) {
+         const statusCode = error?.status || error?.statusCode;
+         if (statusCode === 404 || String(error?.message || '').includes('NOT_FOUND')) {
             return await this.addAdditionalDataKey(id, key, value);
          }
          throw error;

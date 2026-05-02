@@ -12,7 +12,7 @@ import {
 import { BusinessPlansService } from './company.service';
 import { Auth } from '../auth/common/decorators/auth.decorator';
 import { User } from '../auth/common/decorators/user.decorator';
-import { CreateBusinessPlanDto, UpdateBusinessPlanDto } from './dto/business-plan.dto';
+import { CreateBusinessPlanDto, GenerateBusinessPlanDto, UpdateBusinessPlanDto } from './dto/business-plan.dto';
 
 @Controller('company')
 @Auth()
@@ -61,6 +61,15 @@ export class BusinessPlansController {
     @Body() financialData: any,
   ) {
     return this.businessPlansService.addFinancialData(id, user.id, financialData);
+  }
+
+  @Post(':id/generate-business-plan')
+  generateBusinessPlan(
+    @User() user: any,
+    @Param('id') id: string,
+    @Body() options: GenerateBusinessPlanDto,
+  ) {
+    return this.businessPlansService.generateBusinessPlan(id, user.id, options);
   }
 
   @Get('search')

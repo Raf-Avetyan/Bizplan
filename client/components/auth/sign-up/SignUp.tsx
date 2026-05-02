@@ -1,17 +1,22 @@
 import { useState } from "react";
 import {
   View,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
   TextInput,
   TouchableOpacity,
   Text,
   StyleSheet,
   ActivityIndicator,
+  useColorScheme,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
 import axiosClient from "@/api/axios-client";
 import { AuthResponse } from '@/types/auth.types';
 import { useToast } from '@/components/ui/Toast/Toast';
+import { useSettings } from "@/lib/settings-context";
 
 export default function SignUp() {
   const [isLogin, setIsLogin] = useState(true);
@@ -21,6 +26,12 @@ export default function SignUp() {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
   const toast = useToast();
+  const { settings } = useSettings();
+  const colorScheme = useColorScheme();
+  const resolvedTheme =
+    settings.theme === "system" ? (colorScheme === "light" ? "light" : "dark") : settings.theme;
+  const isDark = resolvedTheme === "dark";
+  const palette = getAuthPalette(isDark);
 
   const handleAuth = async () => {
     if (!email || !password) {
@@ -47,7 +58,7 @@ export default function SignUp() {
         await AsyncStorage.setItem("user", JSON.stringify(user));
 
         toast.showToast("Success", "Login successful!", "success");
-        router.replace("/(root)/(tabs)");
+        router.replace(settings.defaultRoute as any);
       } else {
         const data: AuthResponse = await axiosClient.post("/auth/register", {
           name,
@@ -61,7 +72,7 @@ export default function SignUp() {
         await AsyncStorage.setItem("user", JSON.stringify(user));
 
         toast.showToast("Success", "Registration successful!", "success");
-        router.replace("/(root)/(tabs)");
+        router.replace(settings.defaultRoute as any);
       }
     } catch (error: any) {
       const errorMessage = error?.message ||
@@ -75,14 +86,24 @@ export default function SignUp() {
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>{isLogin ? "Sign In" : "Sign Up"}</Text>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}
+      style={[styles.keyboardWrap, { backgroundColor: palette.background }]}
+    >
+    <ScrollView
+      contentContainerStyle={[styles.container, { backgroundColor: palette.background }]}
+      automaticallyAdjustKeyboardInsets
+      keyboardDismissMode="interactive"
+      keyboardShouldPersistTaps="handled"
+    >
+      <Text style={[styles.title, { color: palette.text }]}>{isLogin ? "Sign In" : "Sign Up"}</Text>
 
       {!isLogin && (
         <TextInput
-          style={styles.input}
+          style={[styles.input, { backgroundColor: palette.input, color: palette.text, borderColor: palette.border }]}
           placeholder="Name"
-          placeholderTextColor="#999"
+          placeholderTextColor={palette.placeholder}
           value={name}
           onChangeText={setName}
           autoCapitalize="words"
@@ -90,18 +111,18 @@ export default function SignUp() {
       )}
 
       <TextInput
-        style={styles.input}
+        style={[styles.input, { backgroundColor: palette.input, color: palette.text, borderColor: palette.border }]}
         placeholder="Email"
-        placeholderTextColor="#999"
+        placeholderTextColor={palette.placeholder}
         value={email}
         onChangeText={setEmail}
         autoCapitalize="none"
         keyboardType="email-address"
       />
       <TextInput
-        style={styles.input}
+        style={[styles.input, { backgroundColor: palette.input, color: palette.text, borderColor: palette.border }]}
         placeholder="Password"
-        placeholderTextColor="#999"
+        placeholderTextColor={palette.placeholder}
         value={password}
         onChangeText={setPassword}
         secureTextEntry
@@ -128,13 +149,17 @@ export default function SignUp() {
             : "Already have an account? Sign In"}
         </Text>
       </TouchableOpacity>
-    </View>
+    </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  keyboardWrap: {
     flex: 1,
+  },
+  container: {
+    flexGrow: 1,
     backgroundColor: "#0a1b1f",
     justifyContent: "center",
     padding: 20,
@@ -149,6 +174,7 @@ const styles = StyleSheet.create({
   input: {
     backgroundColor: "#1f2d35",
     color: "#fff",
+    borderWidth: 1,
     paddingHorizontal: 15,
     paddingVertical: 12,
     borderRadius: 10,
@@ -177,3 +203,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 });
+
+function getAuthPalette(isDark: boolean) {
+  return {
+    background: isDark ? "#0a1b1f" : "#F8FAFC",
+    text: isDark ? "#FFFFFF" : "#0F172A",
+    input: isDark ? "#1f2d35" : "#FFFFFF",
+    border: isDark ? "rgba(255,255,255,0.08)" : "rgba(15,23,42,0.10)",
+    placeholder: isDark ? "#94A3B8" : "#718096",
+  };
+}

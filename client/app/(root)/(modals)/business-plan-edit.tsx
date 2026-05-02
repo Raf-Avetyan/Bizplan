@@ -16,6 +16,7 @@ import {
    Image,
    TouchableOpacity,
    StatusBar,
+   useColorScheme,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { MotiView, AnimatePresence } from 'moti';
@@ -34,15 +35,49 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BusinessPlanTemplate } from '@/types/business-plan.types';
 import { useActiveCompany, useCompanyAdditionalData, useUpdateCompanyAdditionalData } from '@/hooks/useCompanyQueries';
 import { useToast } from '@/components/ui/Toast/Toast';
+import { useIsKeyboardVisible } from '@/hooks/useIsKeyboardVisible';
+import { useSettings } from '@/lib/settings-context';
 
 const { height } = Dimensions.get('window');
 
 type BlockStyle = TextStyle & ViewStyle & { width?: number | string; height?: number | string; };
 
+function getEditPalette(isDark: boolean) {
+   return {
+      gradient: isDark ? ["#070A12", "#101827", "#123C35"] as const : ["#F8FAFC", "#EFF7F3", "#E7EEF9"] as const,
+      sheetGradient: isDark ? ["#070A12", "#101827", "#123C35"] as const : ["#F8FAFC", "#EFF7F3", "#E7EEF9"] as const,
+      pageBackground: isDark ? "#0B1020" : "#F8FAFC",
+      text: isDark ? "#F8FAFC" : "#0F172A",
+      muted: isDark ? "#CBD5E1" : "#475569",
+      softText: isDark ? "rgba(226,232,240,0.72)" : "rgba(51,65,85,0.72)",
+      border: isDark ? "rgba(255,255,255,0.11)" : "rgba(15,23,42,0.10)",
+      card: isDark ? "rgba(15,23,42,0.86)" : "rgba(255,255,255,0.92)",
+      chip: isDark ? "rgba(255,255,255,0.07)" : "rgba(15,23,42,0.045)",
+      chipActive: isDark ? "rgba(77,47,178,0.32)" : "rgba(77,47,178,0.12)",
+      input: isDark ? "rgba(2,6,23,0.64)" : "rgba(255,255,255,0.96)",
+      headerSurface: isDark ? "#0F172A" : "#FFFFFF",
+      toolsSurface: isDark ? "#0F172A" : "#FFFFFF",
+      primary: "#4D2FB2",
+      primaryText: "#FFFFFF",
+      accent: "#D7B56D",
+      danger: "#EF4444",
+      dangerBg: isDark ? "rgba(127,29,29,0.26)" : "rgba(254,226,226,0.94)",
+      dangerBorder: isDark ? "rgba(248,113,113,0.28)" : "rgba(220,38,38,0.24)",
+      dangerText: isDark ? "#FECACA" : "#991B1B",
+      shadow: isDark ? "#000000" : "#94A3B8",
+   };
+}
+
 export default function EditPage() {
    const insets = useSafeAreaInsets();
+   const isKeyboardVisible = useIsKeyboardVisible();
    const router = useRouter();
    const toast = useToast();
+   const { settings } = useSettings();
+   const systemScheme = useColorScheme();
+   const resolvedTheme = settings.theme === "system" ? (systemScheme === "light" ? "light" : "dark") : settings.theme;
+   const isDark = resolvedTheme === "dark";
+   const palette = getEditPalette(isDark);
    const params = useLocalSearchParams<{ pageIndex: string }>();
    const { data: activeCompany } = useActiveCompany();
    const { data: companyAdditionalData, isLoading } = useCompanyAdditionalData(activeCompany?.id);
@@ -57,6 +92,7 @@ export default function EditPage() {
    const [toolsVisible, setToolsVisible] = useState(true);
    const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
    const [isSaving, setIsSaving] = useState(false);
+   const [keyboardHeight, setKeyboardHeight] = useState(0);
 
    const scrollViewRef = useRef<ScrollView>(null);
    const blockRefs = useRef<Map<string, View>>(new Map());
@@ -84,6 +120,22 @@ export default function EditPage() {
       }
    }, [companyAdditionalData]);
 
+   useEffect(() => {
+      const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+      const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+      const showSubscription = Keyboard.addListener(showEvent, (event) => {
+         setKeyboardHeight(event.endCoordinates.height);
+      });
+      const hideSubscription = Keyboard.addListener(hideEvent, () => {
+         setKeyboardHeight(0);
+      });
+
+      return () => {
+         showSubscription.remove();
+         hideSubscription.remove();
+      };
+   }, []);
+
    const currentPage = currentPlan?.presentation?.pages?.[pageIndex];
 
    useEffect(() => {
@@ -104,14 +156,14 @@ export default function EditPage() {
 
          if (blockRef && !hasScrolledForBlock.current.get(selectedBlock.id)) {
             setTimeout(() => {
-               blockRef.measureLayout(
-                  scrollViewRef.current as any,
-                  (x: number, y: number, width: number, height: number) => {
-                     scrollViewRef.current?.scrollTo({
-                        y: y + height - 150,
-                        animated: true,
-                     });
-                     hasScrolledForBlock.current.set(selectedBlock.id, true);
+                     blockRef.measureLayout(
+                        scrollViewRef.current as any,
+                        (x: number, y: number, width: number, height: number) => {
+                           scrollViewRef.current?.scrollTo({
+                              y: Math.max(0, y - (insets.top + 104)),
+                              animated: true,
+                           });
+                           hasScrolledForBlock.current.set(selectedBlock.id, true);
                   },
                   () => { }
                );
@@ -748,47 +800,102 @@ export default function EditPage() {
       }
    };
 
+   const EDIT_COMPRESS_KEYS = new Set([
+      'fontSize',
+      'lineHeight',
+      'margin',
+      'marginTop',
+      'marginRight',
+      'marginBottom',
+      'marginLeft',
+      'marginVertical',
+      'marginHorizontal',
+      'padding',
+      'paddingTop',
+      'paddingRight',
+      'paddingBottom',
+      'paddingLeft',
+      'paddingVertical',
+      'paddingHorizontal',
+      'letterSpacing',
+      'height',
+      'minHeight',
+      'maxHeight',
+      'borderRadius',
+   ]);
+
+   const compressEditStyle = (style: any, factor: number = 0.45) => {
+      if (!style || typeof style !== 'object') {
+         return style;
+      }
+
+      const compressed: Record<string, any> = {};
+      for (const [key, value] of Object.entries(style)) {
+         if (typeof value === 'number' && EDIT_COMPRESS_KEYS.has(key)) {
+            if (key.startsWith('margin')) {
+               compressed[key] = Math.max(0, value * 0.08);
+            } else if (key.startsWith('padding')) {
+               compressed[key] = Math.max(0, value * 0.2);
+            } else if (key === 'lineHeight') {
+               compressed[key] = Math.max(8, value * 0.5);
+            } else if (key === 'fontSize') {
+               compressed[key] = Math.max(8, value * 0.6);
+            } else {
+               compressed[key] = Math.max(1, value * factor);
+            }
+         } else {
+            compressed[key] = value;
+         }
+      }
+
+      return compressed;
+   };
+
    const renderBlockContent = (block: PageBlock) => {
+      const compactStyles = compressEditStyle(block.styles);
       switch (block.type) {
          case 'heading':
             return (
-               <Text style={[styles.headingText, block.styles]}>
+               <Text style={[styles.headingText, compactStyles]}>
                   {typeof block.content === 'string' ? block.content : 'Heading'}
                </Text>
             );
          case 'paragraph':
             return (
-               <Text style={[styles.paragraphText, block.styles]}>
+               <Text style={[styles.paragraphText, compactStyles]}>
                   {typeof block.content === 'string' ? block.content : 'Paragraph'}
                </Text>
             );
          case 'list':
             const items = Array.isArray(block.content) ? block.content : [];
+            const renderListItems = (columnItems: any[]) => (
+               columnItems.map((item, index) => (
+                  <View key={`${index}-${String(item)}`} style={styles.listItem}>
+                     <Text style={styles.bullet}>•</Text>
+                     <Text style={[styles.listText, compactStyles]}>{item}</Text>
+                  </View>
+               ))
+            );
             return (
-               <View style={block.styles}>
-                  {items.map((item, index) => (
-                     <View key={index} style={styles.listItem}>
-                        <Text style={styles.bullet}>•</Text>
-                        <Text style={[styles.listText, block.styles]}>{item}</Text>
-                     </View>
-                  ))}
+               <View style={compactStyles}>
+                  {renderListItems(items)}
                </View>
             );
          case 'quote':
             return (
-               <View style={[styles.quoteContainer, block.styles]}>
+               <View style={[styles.quoteContainer, compactStyles]}>
                   <Text style={styles.quoteMark}>"</Text>
                   <Text style={styles.quoteText}>
                      {typeof block.content === 'string' && block.content ? block.content : ''}
                   </Text>
                   {!block.content && (
-                     <Text style={[styles.quoteText, { color: '#999' }]}>Enter your quote here...</Text>
+                     <Text style={[styles.quoteText, { color: palette.muted }]}>Enter your quote here...</Text>
                   )}
                   <Text style={styles.quoteAuthor}>— {block.metadata?.author || 'Author'}</Text>
                </View>
             );
          case 'divider':
-            return <View style={[styles.divider, block.styles]} />;
+            return <View style={[styles.divider, compactStyles]} />;
          case 'image':
             const hasImage = typeof block.content === 'string' && (
                block.content.startsWith('http') ||
@@ -806,7 +913,7 @@ export default function EditPage() {
                      : {};
             return (
                <View>
-                  <View style={[styles.imageContainer, block.styles, { height: block.styles?.height || 200, padding: 0, borderRadius: edBR === 999 ? Number(block.styles?.height || 200) : edBR, overflow: 'hidden' }, edFrame]}>
+                  <View style={[styles.imageContainer, compactStyles, { height: compactStyles?.height || 200, padding: 0, borderRadius: edBR === 999 ? Number(compactStyles?.height || 200) : edBR, overflow: 'hidden' }, edFrame]}>
                      {hasImage ? (
                         <Image
                            source={{ uri: block.content as string }}
@@ -815,7 +922,7 @@ export default function EditPage() {
                         />
                      ) : (
                         <View style={styles.imagePlaceholder}>
-                           <LucideImage size={48} color="#ccc" />
+                           <LucideImage size={48} color={palette.muted} />
                            <Text style={styles.imageText}>
                               {typeof block.content === 'string' ? block.content : 'Image'}
                            </Text>
@@ -827,7 +934,7 @@ export default function EditPage() {
             );
          default:
             return (
-               <Text style={[styles.defaultText, block.styles]}>
+               <Text style={[styles.defaultText, compactStyles]}>
                   {typeof block.content === 'string' ? block.content : JSON.stringify(block.content)}
                </Text>
             );
@@ -836,6 +943,12 @@ export default function EditPage() {
 
    const renderBlock = (block: PageBlock) => {
       const isSelected = selectedBlock?.id === block.id;
+      const compactStyles = compressEditStyle(block.styles);
+      const isSectionBoundaryBlock =
+         block.type === 'heading' ||
+         block.type === 'divider' ||
+         block.type === 'image' ||
+         block.type === 'quote';
 
       return (
          <View
@@ -852,14 +965,16 @@ export default function EditPage() {
             <TouchableOpacity
                style={[
                   styles.block,
-                  isSelected && styles.selectedBlock
+                  isSectionBoundaryBlock ? styles.blockSectionBoundary : styles.blockInlineContent,
+                  isSelected && styles.selectedBlock,
+                  isSelected && { backgroundColor: palette.chipActive, borderColor: palette.primary }
                ]}
                onPress={() => handleBlockSelect(block)}
                activeOpacity={0.7}
             >
                {isSelected && block.type !== 'list' && block.type !== 'image' && block.type !== 'divider' ? (
                   block.type === 'quote' ? (
-                     <View style={[styles.quoteContainer, block.styles, { marginVertical: 0 }]}>
+                     <View style={[styles.quoteContainer, compactStyles, { marginVertical: 0 }]}>
                         <Text style={styles.quoteMark}>"</Text>
                         <TextInput
                            style={[styles.blockInput, styles.quoteInput, { flex: 1, marginLeft: 20 }]}
@@ -871,18 +986,18 @@ export default function EditPage() {
                            multiline
                            autoFocus
                            placeholder="Enter your quote here..."
-                           placeholderTextColor="#999"
+                           placeholderTextColor={palette.muted}
                         />
                         <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10, justifyContent: 'flex-end' }}>
-                           <Text style={{ color: '#666', marginRight: 5 }}>—</Text>
+                           <Text style={{ color: palette.muted, marginRight: 5 }}>—</Text>
                            <TextInput
-                              style={{ color: '#666', fontSize: 14, minWidth: 80, textAlign: 'right' }}
+                              style={{ color: palette.muted, fontSize: 14, minWidth: 80, textAlign: 'right' }}
                               value={block.metadata?.author || ''}
                               onChangeText={(text) => {
                                  updateBlockMetadata(block.id, { author: text });
                               }}
                               placeholder="Author"
-                              placeholderTextColor="#999"
+                              placeholderTextColor={palette.muted}
                            />
                         </View>
                      </View>
@@ -891,7 +1006,7 @@ export default function EditPage() {
                         style={[
                            styles.blockInput,
                            block.type === 'heading' ? styles.headingInput : {},
-                           block.styles
+                           compactStyles
                         ]}
                         value={editingContent}
                         onChangeText={(text) => {
@@ -901,7 +1016,7 @@ export default function EditPage() {
                         multiline
                         autoFocus
                         placeholder={`Edit ${block.type}...`}
-                        placeholderTextColor="#999"
+                        placeholderTextColor={palette.muted}
                      />
                   )
                ) : (
@@ -929,17 +1044,17 @@ export default function EditPage() {
             style={styles.listMenu}
          >
             <LinearGradient
-               colors={["#4D2FB2", "#2B1A66", "#050510"]}
+               colors={palette.sheetGradient}
                style={{ flex: 1, paddingTop: insets.top }}
                start={{ x: 0.5, y: 0 }}
                end={{ x: 0.5, y: 1 }}
                locations={[0, 0.6, 1]}
             >
                <View style={styles.listMenuContent}>
-                  <View style={styles.listMenuHeader}>
-                     <Text style={styles.listMenuTitle}>Edit List Items</Text>
-                     <TouchableOpacity onPress={closeListMenu} style={styles.closeMenuButton}>
-                        <X size={24} color="#FFFFFF" />
+                  <View style={[styles.listMenuHeader, { borderBottomColor: palette.border }]}>
+                     <Text style={[styles.listMenuTitle, { color: palette.text }]}>Edit List Items</Text>
+                     <TouchableOpacity onPress={closeListMenu} style={[styles.closeMenuButton, { backgroundColor: palette.chip, borderColor: palette.border }]}>
+                        <X size={24} color={palette.text} />
                      </TouchableOpacity>
                   </View>
 
@@ -954,10 +1069,11 @@ export default function EditPage() {
                            <View
                               style={[
                                  styles.listMenuInputItem,
+                                 { backgroundColor: palette.card, borderColor: palette.border },
                                  isActive && {
-                                    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-                                    borderColor: 'rgba(255, 255, 255, 0.4)',
-                                    shadowColor: '#fff',
+                                    backgroundColor: palette.chipActive,
+                                    borderColor: palette.primary,
+                                    shadowColor: palette.primary,
                                     shadowOpacity: 0.15,
                                     shadowRadius: 10,
                                     elevation: 8,
@@ -965,17 +1081,17 @@ export default function EditPage() {
                               ]}
                            >
                               <TouchableOpacity onLongPress={drag} delayLongPress={100} style={{ padding: 6, marginRight: 4 }}>
-                                 <GripVertical size={16} color="rgba(255, 255, 255, 0.4)" />
+                                 <GripVertical size={16} color={palette.muted} />
                               </TouchableOpacity>
-                              <Text style={styles.itemNumber}>{index + 1}.</Text>
+                              <Text style={[styles.itemNumber, { color: palette.muted }]}>{index + 1}.</Text>
                               <TextInput
-                                 style={styles.listItemInput}
+                                 style={[styles.listItemInput, { color: palette.text }]}
                                  value={item.text}
                                  onChangeText={(text) => updateListItem(index, text)}
                                  onEndEditing={flushListUpdate}
                                  multiline
                                  placeholder="List item content..."
-                                 placeholderTextColor="rgba(255,255,255,0.3)"
+                                 placeholderTextColor={palette.muted}
                               />
                               <TouchableOpacity
                                  onPress={() => removeListItem(index)}
@@ -989,16 +1105,16 @@ export default function EditPage() {
                   />
 
                   <View style={{ flexDirection: 'row', gap: 10 }}>
-                     <TouchableOpacity style={[styles.addItemButton, { flex: 1 }]} onPress={addListItem}>
-                        <PlusCircle size={20} color="whitesmoke" />
-                        <Text style={styles.addItemButtonText}>Add Item</Text>
+                     <TouchableOpacity style={[styles.addItemButton, { flex: 1, backgroundColor: palette.card, borderColor: palette.border }]} onPress={addListItem}>
+                        <PlusCircle size={20} color={palette.text} />
+                        <Text style={[styles.addItemButtonText, { color: palette.text }]}>Add Item</Text>
                      </TouchableOpacity>
                      <TouchableOpacity
-                        style={[styles.addItemButton, { flex: 1, backgroundColor: 'rgba(239, 68, 68, 0.15)', borderColor: 'rgba(239, 68, 68, 0.3)' }]}
+                        style={[styles.addItemButton, { flex: 1, backgroundColor: palette.dangerBg, borderColor: palette.dangerBorder }]}
                         onPress={() => deleteBlock(selectedBlock.id)}
                      >
-                        <Trash2 size={20} color="whitesmoke" />
-                        <Text style={styles.addItemButtonText}>Delete List</Text>
+                        <Trash2 size={20} color={palette.dangerText} />
+                        <Text style={[styles.addItemButtonText, { color: palette.dangerText }]}>Delete List</Text>
                      </TouchableOpacity>
                   </View>
                </View>
@@ -1041,17 +1157,17 @@ export default function EditPage() {
             style={styles.listMenu}
          >
             <LinearGradient
-               colors={["#4D2FB2", "#2B1A66", "#050510"]}
+               colors={palette.sheetGradient}
                style={{ flex: 1, paddingTop: insets.top }}
                start={{ x: 0.5, y: 0 }}
                end={{ x: 0.5, y: 1 }}
                locations={[0, 0.6, 1]}
             >
                <View style={styles.listMenuContent}>
-                  <View style={styles.listMenuHeader}>
-                     <Text style={styles.listMenuTitle}>Edit Image</Text>
-                     <TouchableOpacity onPress={closeImageMenu} style={styles.closeMenuButton}>
-                        <X size={24} color="#FFFFFF" />
+                  <View style={[styles.listMenuHeader, { borderBottomColor: palette.border }]}>
+                     <Text style={[styles.listMenuTitle, { color: palette.text }]}>Edit Image</Text>
+                     <TouchableOpacity onPress={closeImageMenu} style={[styles.closeMenuButton, { backgroundColor: palette.chip, borderColor: palette.border }]}>
+                        <X size={24} color={palette.text} />
                      </TouchableOpacity>
                   </View>
 
@@ -1061,7 +1177,7 @@ export default function EditPage() {
                      showsVerticalScrollIndicator={false}
                   >
                      {/* Image Preview */}
-                     <View style={[styles.imagePreviewContainer, { minHeight: undefined }]}>
+                     <View style={[styles.imagePreviewContainer, { minHeight: undefined, backgroundColor: palette.card, borderColor: palette.border }]}>
                         <View style={{ width: '100%', alignItems: 'center', justifyContent: 'center' }}>
                            <MotiView
                               animate={{ height: currentHeight }}
@@ -1078,7 +1194,7 @@ export default function EditPage() {
                         <TouchableOpacity style={styles.deleteImageButton} onPress={() => deleteBlock(selectedBlock.id)}>
                            <Trash2 size={18} color="white" />
                         </TouchableOpacity>
-                        <TouchableOpacity style={styles.changeImageButton} onPress={() => pickImage(selectedBlock.id)}>
+                        <TouchableOpacity style={[styles.changeImageButton, { backgroundColor: isDark ? 'rgba(2,6,23,.76)' : 'rgba(15,23,42,.74)' }]} onPress={() => pickImage(selectedBlock.id)}>
                            <Camera size={20} color="white" />
                            <Text style={styles.changeImageText}>Change</Text>
                         </TouchableOpacity>
@@ -1086,18 +1202,18 @@ export default function EditPage() {
 
                      {/* Height Control */}
                      <View style={styles.imgCtrlSection}>
-                        <Text style={styles.imgCtrlLabel}>Height</Text>
+                        <Text style={[styles.imgCtrlLabel, { color: palette.softText }]}>Height</Text>
                         <View style={styles.imgCtrlRow}>
-                           <TouchableOpacity style={styles.imgCtrlBtn} onPress={() => {
+                           <TouchableOpacity style={[styles.imgCtrlBtn, { backgroundColor: palette.chip, borderColor: palette.border }]} onPress={() => {
                               const v = Math.max(40, currentHeight - 20);
                               setBlockStyle(selectedBlock.id, { height: v });
                               setHeightInput(String(v));
                            }}>
-                              <Minus size={16} color="#fff" />
+                              <Minus size={16} color={palette.text} />
                            </TouchableOpacity>
-                           <View style={styles.imgInputWrap}>
+                           <View style={[styles.imgInputWrap, { backgroundColor: palette.input, borderColor: palette.border }]}>
                               <TextInput
-                                 style={styles.imgDimensionInput}
+                                 style={[styles.imgDimensionInput, { color: palette.text }]}
                                  value={heightInput}
                                  onChangeText={setHeightInput}
                                  onEndEditing={() => {
@@ -1118,32 +1234,37 @@ export default function EditPage() {
                                  selectTextOnFocus
                                  returnKeyType="done"
                               />
-                              <Text style={styles.imgDimensionUnit}>px</Text>
+                              <Text style={[styles.imgDimensionUnit, { color: palette.muted }]}>px</Text>
                            </View>
-                           <TouchableOpacity style={styles.imgCtrlBtn} onPress={() => {
+                           <TouchableOpacity style={[styles.imgCtrlBtn, { backgroundColor: palette.chip, borderColor: palette.border }]} onPress={() => {
                               const v = Math.min(600, currentHeight + 20);
                               setBlockStyle(selectedBlock.id, { height: v });
                               setHeightInput(String(v));
                            }}>
-                              <Plus size={16} color="#fff" />
+                              <Plus size={16} color={palette.text} />
                            </TouchableOpacity>
                         </View>
                      </View>
 
                      {/* Size Presets */}
                      <View style={styles.imgCtrlSection}>
-                        <Text style={styles.imgCtrlLabel}>Size Presets</Text>
+                        <Text style={[styles.imgCtrlLabel, { color: palette.softText }]}>Size Presets</Text>
                         <View style={styles.imgPresetRow}>
                            {sizePresets.map(p => (
                               <TouchableOpacity
                                  key={p.label}
-                                 style={[styles.imgPresetBtn, currentHeight === p.h && styles.imgPresetBtnActive]}
+                                 style={[
+                                    styles.imgPresetBtn,
+                                    { backgroundColor: palette.chip, borderColor: palette.border },
+                                    currentHeight === p.h && styles.imgPresetBtnActive,
+                                    currentHeight === p.h && { backgroundColor: palette.chipActive, borderColor: palette.primary }
+                                 ]}
                                  onPress={() => {
                                     setBlockStyle(selectedBlock.id, { height: p.h });
                                     setHeightInput(String(p.h));
                                  }}
                               >
-                                 <Text style={[styles.imgPresetText, currentHeight === p.h && styles.imgPresetTextActive]}>{p.label}</Text>
+                                 <Text style={[styles.imgPresetText, { color: palette.muted }, currentHeight === p.h && styles.imgPresetTextActive, currentHeight === p.h && { color: palette.primary }]}>{p.label}</Text>
                               </TouchableOpacity>
                            ))}
                         </View>
@@ -1151,11 +1272,20 @@ export default function EditPage() {
 
                      {/* Border Radius */}
                      <View style={styles.imgCtrlSection}>
-                        <Text style={styles.imgCtrlLabel}>Corner Radius</Text>
+                        <Text style={[styles.imgCtrlLabel, { color: palette.softText }]}>Corner Radius</Text>
                         <View style={styles.imgPresetRow}>
                            {radiusPresets.map(p => (
-                              <TouchableOpacity key={p.label} style={[styles.imgPresetBtn, currentBorderRadius === p.val && styles.imgPresetBtnActive]} onPress={() => setBlockStyle(selectedBlock.id, { borderRadius: p.val })}>
-                                 <Text style={[styles.imgPresetText, currentBorderRadius === p.val && styles.imgPresetTextActive]}>{p.label}</Text>
+                              <TouchableOpacity
+                                 key={p.label}
+                                 style={[
+                                    styles.imgPresetBtn,
+                                    { backgroundColor: palette.chip, borderColor: palette.border },
+                                    currentBorderRadius === p.val && styles.imgPresetBtnActive,
+                                    currentBorderRadius === p.val && { backgroundColor: palette.chipActive, borderColor: palette.primary }
+                                 ]}
+                                 onPress={() => setBlockStyle(selectedBlock.id, { borderRadius: p.val })}
+                              >
+                                 <Text style={[styles.imgPresetText, { color: palette.muted }, currentBorderRadius === p.val && styles.imgPresetTextActive, currentBorderRadius === p.val && { color: palette.primary }]}>{p.label}</Text>
                               </TouchableOpacity>
                            ))}
                         </View>
@@ -1163,11 +1293,20 @@ export default function EditPage() {
 
                      {/* Resize Mode */}
                      <View style={styles.imgCtrlSection}>
-                        <Text style={styles.imgCtrlLabel}>Display Mode</Text>
+                        <Text style={[styles.imgCtrlLabel, { color: palette.softText }]}>Display Mode</Text>
                         <View style={styles.imgPresetRow}>
                            {resizeModes.map(m => (
-                              <TouchableOpacity key={m} style={[styles.imgPresetBtn, { flex: 1 }, currentResizeMode === m && styles.imgPresetBtnActive]} onPress={() => updateBlockMetadata(selectedBlock.id, { resizeMode: m })}>
-                                 <Text style={[styles.imgPresetText, currentResizeMode === m && styles.imgPresetTextActive]}>{m.charAt(0).toUpperCase() + m.slice(1)}</Text>
+                              <TouchableOpacity
+                                 key={m}
+                                 style={[
+                                    styles.imgPresetBtn,
+                                    { flex: 1, backgroundColor: palette.chip, borderColor: palette.border },
+                                    currentResizeMode === m && styles.imgPresetBtnActive,
+                                    currentResizeMode === m && { backgroundColor: palette.chipActive, borderColor: palette.primary }
+                                 ]}
+                                 onPress={() => updateBlockMetadata(selectedBlock.id, { resizeMode: m })}
+                              >
+                                 <Text style={[styles.imgPresetText, { color: palette.muted }, currentResizeMode === m && styles.imgPresetTextActive, currentResizeMode === m && { color: palette.primary }]}>{m.charAt(0).toUpperCase() + m.slice(1)}</Text>
                               </TouchableOpacity>
                            ))}
                         </View>
@@ -1175,9 +1314,9 @@ export default function EditPage() {
 
                      {/* Caption */}
                      <View style={styles.imgCtrlSection}>
-                        <Text style={styles.imgCtrlLabel}>Caption</Text>
+                        <Text style={[styles.imgCtrlLabel, { color: palette.softText }]}>Caption</Text>
                         <TextInput
-                           style={styles.imgCaptionInput}
+                           style={[styles.imgCaptionInput, { backgroundColor: palette.input, borderColor: palette.border, color: palette.text }]}
                            value={captionInput}
                            onChangeText={setCaptionInput}
                            onFocus={() => {
@@ -1188,7 +1327,7 @@ export default function EditPage() {
                            }}
                            onEndEditing={() => updateBlockMetadata(selectedBlock.id, { caption: captionInput })}
                            placeholder="Add a caption..."
-                           placeholderTextColor="rgba(255,255,255,0.3)"
+                           placeholderTextColor={palette.muted}
                            multiline
                            returnKeyType="done"
                            blurOnSubmit={true}
@@ -1205,47 +1344,58 @@ export default function EditPage() {
 
    if (isLoading || !currentPlan || !currentPage) {
       return (
-         <View style={styles.loadingContainer}>
+         <View style={[styles.loadingContainer, { backgroundColor: palette.pageBackground }]}>
             <ActivityIndicator size="large" color="#4D2FB2" />
          </View>
       );
    }
 
+   const shouldShowToolsBar = toolsVisible && (!isKeyboardVisible || Boolean(selectedBlock));
+   const toolsBarBottom = isKeyboardVisible
+      ? Math.max(keyboardHeight - insets.bottom - 18, 2)
+      : 2 + insets.bottom;
+
    return (
       <>
          <LinearGradient
-            colors={["#4D2FB2", "#2B1A66", "#050510"]}
+            colors={palette.gradient}
             style={{ flex: 1 }}
             locations={[0, 0.6, 1]}
          >
-            <SafeAreaView style={styles.container}>
-               <View style={styles.header}>
-                  <TouchableOpacity onPress={() => handleDone("back")} style={styles.backButton}>
-                     <ArrowLeft size={20} color="#fff" />
+            <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
+            <SafeAreaView style={styles.container} edges={['left', 'right']}>
+               <View style={[styles.header, { top: insets.top + 6, backgroundColor: palette.headerSurface, borderColor: palette.border, shadowColor: palette.shadow }]}>
+                  <TouchableOpacity onPress={() => handleDone("back")} style={[styles.backButton, { backgroundColor: palette.chip, borderColor: palette.border }]}>
+                     <ArrowLeft size={20} color={palette.text} />
                   </TouchableOpacity>
-                  <Text style={styles.headerTitle}>{currentPage.title}</Text>
+                  <View style={styles.headerTitleWrap}>
+                     <Text style={[styles.headerEyebrow, { color: palette.softText }]}>Plan editor</Text>
+                     <Text style={[styles.headerTitle, { color: palette.text }]} numberOfLines={1}>{currentPage.title}</Text>
+                  </View>
                   <View style={styles.headerRight}>
                      {hasUnsavedChanges && (
                         <View style={styles.unsavedIndicator}>
-                           <Text style={styles.unsavedText}>●</Text>
+                           <Text style={[styles.unsavedText, { color: palette.accent }]}>●</Text>
                         </View>
                      )}
                      <TouchableOpacity
                         onPress={() => handleDone("save")}
-                        style={styles.doneButton}
+                        style={[styles.doneButton, { backgroundColor: hasUnsavedChanges ? palette.primary : palette.chip, borderColor: hasUnsavedChanges ? palette.primary : palette.border }]}
                         disabled={isSaving}
                      >
                         {isSaving ? (
                            <ActivityIndicator size="small" color="#fff" />
                         ) : (
-                           <Text style={styles.doneButtonText}>{hasUnsavedChanges ? "Save" : "Done"}</Text>
+                           <Text style={[styles.doneButtonText, { color: hasUnsavedChanges ? palette.primaryText : palette.text }]}>{hasUnsavedChanges ? "Save" : "Done"}</Text>
                         )}
                      </TouchableOpacity>
                   </View>
                </View>
 
                <KeyboardAvoidingView
-                  behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                  enabled={false}
+                  behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                  keyboardVerticalOffset={0}
                   style={{ flex: 1 }}
                >
                   <View style={{ flex: 1 }}>
@@ -1254,33 +1404,52 @@ export default function EditPage() {
                            <ScrollView
                               ref={scrollViewRef}
                               style={styles.contentArea}
+                              contentContainerStyle={{
+                                 paddingTop: insets.top + 84,
+                                 paddingBottom: (shouldShowToolsBar ? 118 : 20) + insets.bottom + (isKeyboardVisible ? keyboardHeight : 0),
+                              }}
                               keyboardShouldPersistTaps="handled"
+                              keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
                               showsVerticalScrollIndicator={true}
                            >
                               <View style={[
                                  styles.page,
-                                 { backgroundColor: currentPage.formatting?.backgroundColor || '#ffffff' }
+                                 {
+                                    backgroundColor: currentPage.formatting?.backgroundColor || '#ffffff',
+                                    borderColor: palette.border,
+                                    shadowColor: palette.shadow,
+                                 }
                               ]}>
                                  {currentPage.blocks.map(renderBlock)}
 
                                  <TouchableOpacity
-                                    style={styles.addBlockPlaceholder}
+                                    style={[styles.addBlockPlaceholder, { backgroundColor: palette.chip, borderColor: palette.border }]}
                                     onPress={() => addNewBlock({ type: 'paragraph', name: 'Text' })}
                                  >
-                                    <Plus size={20} color="rgba(0, 25, 65, 0.25)" />
-                                    <Text style={styles.addBlockText}>Tap to add content</Text>
+                                    <Plus size={20} color={palette.primary} />
+                                    <Text style={[styles.addBlockText, { color: palette.muted }]}>Tap to add content</Text>
                                  </TouchableOpacity>
                               </View>
                            </ScrollView>
                         </View>
                      </TouchableWithoutFeedback>
 
-                     {toolsVisible && (
-                        <View style={styles.toolsBar}>
+                     {shouldShowToolsBar && (
+                        <View style={[
+                           styles.toolsBar,
+                           isKeyboardVisible && styles.toolsBarKeyboard,
+                           {
+                              bottom: toolsBarBottom,
+                              backgroundColor: palette.toolsSurface,
+                              borderColor: palette.border,
+                              shadowColor: palette.shadow,
+                           }
+                        ]}>
                            <ScrollView
                               horizontal
                               showsHorizontalScrollIndicator={false}
                               keyboardShouldPersistTaps="always"
+                              contentContainerStyle={styles.toolsScrollContent}
                            >
                               <View style={styles.toolsContainer}>
                                  {(selectedBlock ? [
@@ -1306,7 +1475,9 @@ export default function EditPage() {
                                           key={tool.id}
                                           style={[
                                              styles.toolButton,
+                                             { backgroundColor: palette.chip, borderColor: palette.border },
                                              isStyleApplied && styles.toolButtonActive,
+                                             isStyleApplied && { backgroundColor: palette.chipActive, borderColor: palette.primary },
                                              tool.id === 'delete' && { backgroundColor: 'rgba(239, 68, 68, 0.98)' }
                                           ]}
                                           onPress={() => {
@@ -1331,11 +1502,13 @@ export default function EditPage() {
                                        >
                                           <tool.icon
                                              size={24}
-                                             color={(tool.id === 'delete') ? "white" : isStyleApplied ? "#000000" : "rgba(255, 255, 255, 0.75)"}
+                                             color={(tool.id === 'delete') ? "white" : isStyleApplied ? palette.primary : palette.muted}
                                           />
                                           <Text style={[
                                              styles.toolLabel,
+                                             { color: palette.muted },
                                              isStyleApplied && styles.toolLabelActive,
+                                             isStyleApplied && { color: palette.primary },
                                              (tool.type === 'delete') && {
                                                 color: "white"
                                              }
@@ -1352,16 +1525,18 @@ export default function EditPage() {
                   </View>
                </KeyboardAvoidingView>
 
-               <TouchableOpacity
-                  style={styles.toggleToolsButton}
-                  onPress={() => setToolsVisible(!toolsVisible)}
-               >
-                  {toolsVisible ? (
-                     <ChevronDown size={24} color="#001941" />
-                  ) : (
-                     <ChevronUp size={24} color="#001941" />
-                  )}
-               </TouchableOpacity>
+               {!isKeyboardVisible ? (
+                  <TouchableOpacity
+                     style={[styles.toggleToolsButton, { bottom: 114 + insets.bottom, backgroundColor: palette.card, borderColor: palette.border, shadowColor: palette.shadow }]}
+                     onPress={() => setToolsVisible(!toolsVisible)}
+                  >
+                     {toolsVisible ? (
+                        <ChevronDown size={24} color={palette.text} />
+                     ) : (
+                        <ChevronUp size={24} color={palette.text} />
+                     )}
+                  </TouchableOpacity>
+               ) : null}
             </SafeAreaView>
          </LinearGradient>
          <AnimatePresence>
@@ -1396,11 +1571,22 @@ const styles = StyleSheet.create({
       backgroundColor: '#4D2FB2',
    },
    header: {
+      position: 'absolute',
+      top: 6,
+      left: 0,
+      right: 0,
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      paddingHorizontal: 18,
-      paddingBottom: 12,
+      marginHorizontal: 14,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      borderRadius: 24,
+      borderWidth: 1,
+      shadowOffset: { width: 0, height: 12 },
+      shadowOpacity: 0.12,
+      shadowRadius: 24,
+      elevation: 6,
       zIndex: 10,
    },
    headerRight: {
@@ -1409,15 +1595,29 @@ const styles = StyleSheet.create({
       gap: 12,
    },
    backButton: {
-      padding: 8,
+      width: 40,
+      height: 40,
+      alignItems: 'center',
+      justifyContent: 'center',
       backgroundColor: "rgba(255, 255, 255, 0.08)",
-      borderRadius: 11,
+      borderRadius: 14,
       borderWidth: 1,
       borderColor: "rgba(255, 255, 255, 0.1)",
    },
+   headerTitleWrap: {
+      flex: 1,
+      marginHorizontal: 12,
+   },
+   headerEyebrow: {
+      fontSize: 10,
+      fontWeight: '800',
+      letterSpacing: 1.2,
+      textTransform: 'uppercase',
+      marginBottom: 2,
+   },
    headerTitle: {
-      fontSize: 18,
-      fontWeight: '700',
+      fontSize: 16,
+      fontWeight: '800',
       color: 'white',
       letterSpacing: 0.3,
    },
@@ -1429,10 +1629,10 @@ const styles = StyleSheet.create({
       fontSize: 12,
    },
    doneButton: {
-      paddingHorizontal: 14,
-      paddingVertical: 7,
+      paddingHorizontal: 13,
+      paddingVertical: 9,
       backgroundColor: "rgba(255, 255, 255, 0.08)",
-      borderRadius: 11,
+      borderRadius: 14,
       borderWidth: 1,
       borderColor: "rgba(255, 255, 255, 0.1)",
       minWidth: 64,
@@ -1448,34 +1648,43 @@ const styles = StyleSheet.create({
    },
    page: {
       minHeight: height - 280,
-      padding: 30,
-      marginHorizontal: 8,
-      borderRadius: 12,
+      padding: 14,
+      marginHorizontal: 14,
+      marginTop: 6,
+      borderRadius: 24,
+      borderWidth: 1,
       shadowColor: '#000',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.1,
-      shadowRadius: 6,
-      elevation: 3,
+      shadowOffset: { width: 0, height: 16 },
+      shadowOpacity: 0.12,
+      shadowRadius: 28,
+      elevation: 7,
    },
    block: {
-      marginBottom: 20,
-      padding: 10,
+      paddingHorizontal: 0,
       borderRadius: 6,
-      minHeight: 40,
+      minHeight: 0,
       borderWidth: 2,
       borderColor: 'transparent',
       borderStyle: 'dashed',
    },
+   blockInlineContent: {
+      marginBottom: 2,
+      paddingVertical: 0,
+   },
+   blockSectionBoundary: {
+      marginBottom: 8,
+      paddingVertical: 2,
+   },
    selectedBlock: {
-      backgroundColor: 'rgba(0, 25, 65, 0.05)',
-      borderColor: '#001941',
+      backgroundColor: 'rgba(77, 47, 178, 0.1)',
+      borderColor: '#4D2FB2',
    },
    blockInput: {
       fontSize: 14,
       color: '#333',
       padding: 0,
       margin: 0,
-      minHeight: 40,
+      minHeight: 0,
    },
    addBlockPlaceholder: {
       height: 70,
@@ -1497,23 +1706,39 @@ const styles = StyleSheet.create({
       textTransform: "uppercase",
    },
    toolsBar: {
-      maxHeight: 110,
+      position: 'absolute',
+      left: 12,
+      right: 12,
+      bottom: 8,
+      maxHeight: 104,
       paddingVertical: 8,
+      borderRadius: 26,
+      borderWidth: 1,
+      shadowOffset: { width: 0, height: 14 },
+      shadowOpacity: 0.16,
+      shadowRadius: 24,
+      elevation: 8,
+      overflow: 'hidden',
+   },
+   toolsBarKeyboard: {
+      bottom: 2,
+   },
+   toolsScrollContent: {
+      paddingHorizontal: 12,
    },
    toolsContainer: {
       flexDirection: 'row',
-      paddingHorizontal: 16,
    },
    toolButton: {
       alignItems: 'center',
       justifyContent: 'center',
-      paddingHorizontal: 16,
-      paddingVertical: 12,
-      marginRight: 12,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      marginRight: 10,
       backgroundColor: 'rgba(255, 255, 255, 0.05)',
-      borderRadius: 14,
-      minWidth: 68,
-      borderWidth: 1.5,
+      borderRadius: 18,
+      minWidth: 64,
+      borderWidth: 1,
       borderColor: 'rgba(255, 255, 255, 0.04)',
    },
    toolButtonActive: {
@@ -1548,6 +1773,7 @@ const styles = StyleSheet.create({
       borderRadius: 20,
       justifyContent: 'center',
       alignItems: 'center',
+      borderWidth: 1,
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 2 },
       shadowOpacity: 0.2,
@@ -1556,16 +1782,16 @@ const styles = StyleSheet.create({
       zIndex: 20,
    },
    headingText: {
-      fontSize: 24,
+      fontSize: 14,
       fontWeight: 'bold',
       color: '#001941',
-      marginBottom: 10,
+      marginBottom: 2,
    },
    paragraphText: {
-      fontSize: 14,
-      lineHeight: 20,
+      fontSize: 9,
+      lineHeight: 11,
       color: '#333',
-      marginBottom: 15,
+      marginBottom: 2,
    },
    headingInput: {
       fontSize: 24,
@@ -1581,28 +1807,28 @@ const styles = StyleSheet.create({
    listItem: {
       flexDirection: 'row',
       alignItems: 'flex-start',
-      marginBottom: 5,
+      marginBottom: 1,
    },
    bullet: {
-      marginRight: 8,
-      fontSize: 16,
+      marginRight: 4,
+      fontSize: 10,
    },
    listText: {
-      fontSize: 14,
-      lineHeight: 20,
+      fontSize: 9,
+      lineHeight: 11,
       flex: 1,
    },
    divider: {
       height: 2,
       backgroundColor: '#001941',
-      marginVertical: 20,
+      marginVertical: 4,
    },
    imageContainer: {
       justifyContent: 'center',
       alignItems: 'center',
       backgroundColor: '#f0f0f0',
       borderRadius: 8,
-      marginVertical: 15,
+      marginVertical: 3,
       overflow: 'hidden',
    },
    imagePlaceholder: {
@@ -1621,12 +1847,12 @@ const styles = StyleSheet.create({
       color: '#333',
    },
    quoteContainer: {
-      padding: 16,
+      padding: 8,
       backgroundColor: '#f9f9f9',
       borderRadius: 8,
       borderLeftWidth: 4,
       borderLeftColor: '#001941',
-      marginVertical: 8,
+      marginVertical: 2,
    },
    quoteMark: {
       fontSize: 40,
@@ -1637,16 +1863,16 @@ const styles = StyleSheet.create({
       left: 10,
    },
    quoteText: {
-      fontSize: 14,
+      fontSize: 9,
       fontStyle: 'italic',
       color: '#333',
-      lineHeight: 20,
+      lineHeight: 11,
       paddingLeft: 20,
    },
    quoteAuthor: {
       fontSize: 12,
       color: '#666',
-      marginTop: 8,
+      marginTop: 2,
       textAlign: 'right',
    },
    listMenu: {
@@ -1917,8 +2143,8 @@ const styles = StyleSheet.create({
       alignItems: 'center',
    },
    imgPresetBtnActive: {
-      backgroundColor: 'rgba(255, 215, 0, 0.2)',
-      borderColor: '#FFD700',
+      backgroundColor: 'rgba(77, 47, 178, 0.14)',
+      borderColor: '#4D2FB2',
    },
    imgPresetText: {
       color: 'rgba(255, 255, 255, 0.7)',
@@ -1926,7 +2152,7 @@ const styles = StyleSheet.create({
       fontWeight: '600',
    },
    imgPresetTextActive: {
-      color: '#FFD700',
+      color: '#4D2FB2',
    },
    imgCaptionInput: {
       backgroundColor: 'rgba(255, 255, 255, 0.08)',

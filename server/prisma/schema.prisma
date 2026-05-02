@@ -13,12 +13,28 @@ model User {
   email                String         @unique
   password             String
   businessPlans        BusinessPlan[]
+  appData              UserAppData?
   activeBusinessPlanId String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@map("users")
+}
+
+model UserAppData {
+  id            String   @id @default(uuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  settings      Json?    @default("{}")
+  aiChats       Json?    @default("{}")
+  toolDocuments Json?    @default("[]")
+  newsCache     Json?    @default("{}")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("user_app_data")
 }
 
 model BusinessPlan {

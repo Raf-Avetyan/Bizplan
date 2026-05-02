@@ -1,15 +1,15 @@
 import { useMemo } from "react";
 import { Message } from "@/components/chat/types";
-import { GoogleGenAI } from "@google/genai";
-
-const ai = new GoogleGenAI({
-  // apiKey: process.env.EXPO_PUBLIC_GOOGLEAI_API_KEY,
-  apiKey: "AIzaSyCfR5gl4VA4y8a0TqXtSXBc6Zw9GgqkVN0"
-});
+import { getGeminiClient } from "@/lib/gemini";
 
 export const useAiChat = ({ history }: { history: Message[] }) => {
   return useMemo(() => {
     try {
+      const ai = getGeminiClient();
+      if (!ai) {
+        throw new Error("Missing EXPO_PUBLIC_GOOGLEAI_API_KEY");
+      }
+
       const historyArray = history.map((msg) => ({
         role: msg.role,
         parts: [{ text: msg.text }],
@@ -25,10 +25,10 @@ export const useAiChat = ({ history }: { history: Message[] }) => {
       console.error('Error creating chat:', error);
       return {
         sendMessage: async (message: any) => ({
-          text: 'AI chat is currently unavailable. Please check your internet connection and try again later.'
+          text: 'AI chat is currently unavailable. Please check your Gemini API key and internet connection, then try again later.'
         }),
         sendMessageStream: async function* () {
-          yield { text: 'AI chat is currently unavailable. Please check your internet connection and try again later.' };
+          yield { text: 'AI chat is currently unavailable. Please check your Gemini API key and internet connection, then try again later.' };
         }
       };
     }

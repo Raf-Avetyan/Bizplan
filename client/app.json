@@ -3,7 +3,7 @@
     "name": "BizPlan",
     "slug": "bizplan",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/images/splash-icon.png",
     "scheme": "bizplan",
     "userInterfaceStyle": "automatic",

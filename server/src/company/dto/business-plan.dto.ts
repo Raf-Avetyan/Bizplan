@@ -57,3 +57,14 @@ export class UpdateBusinessPlanDto {
    @IsObject()
    financialData?: Record<string, any>;
 }
+
+export class GenerateBusinessPlanDto {
+   @IsOptional()
+   @IsArray()
+   @IsString({ each: true })
+   sections?: string[];
+
+   @IsOptional()
+   @IsBoolean()
+   overwrite?: boolean;
+}

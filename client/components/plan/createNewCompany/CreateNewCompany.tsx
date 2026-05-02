@@ -1,6 +1,6 @@
 import LottieView from "lottie-react-native";
 import React, { useState, useEffect } from "react";
-import { Text, TextInput, TouchableOpacity, View } from "react-native";
+import { KeyboardAvoidingView, Platform, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { PanGestureHandler, State } from "react-native-gesture-handler";
 import { Plus } from "lucide-react-native";
 import { cn } from "@/lib/utils";
@@ -314,6 +314,11 @@ export default function CreateNewCompany() {
    })();
 
    return (
+      <KeyboardAvoidingView
+         behavior={Platform.OS === "ios" ? "padding" : "height"}
+         keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}
+         className="flex-1"
+      >
       <View className="flex flex-col justify-center items-center gap-2 pt-2 pb-8">
          <View
             className={cn(
@@ -451,5 +456,6 @@ export default function CreateNewCompany() {
          </PanGestureHandler>
          <OurPolicyInfo />
       </View>
+      </KeyboardAvoidingView>
    );
 }

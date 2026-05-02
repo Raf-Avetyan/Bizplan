@@ -1,12 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ScrollView,
   Text,
   TouchableOpacity,
   View,
   StyleSheet,
+  useColorScheme,
 } from "react-native";
-import { useAiChat } from "@/hooks/Chat/useAiChat";
 import { MotiView } from 'moti';
 import { tableOfContents } from '../../../../../components/plan/BusinessPlanRenderer';
 import { ViewStyle, TextStyle } from 'react-native';
@@ -15,6 +15,8 @@ import { Company, CompanyAdditionalDataDto } from '@/types/company.types';
 import Card from './Card/Card';
 import { cardData, CardDataItem } from '@/constants/DashboardCardData';
 import { useToast } from '@/components/ui/Toast/Toast';
+import { companyService } from '@/services/company.service';
+import { useSettings } from '@/lib/settings-context';
 
 type ContentProps = {
   companyData: Company;
@@ -75,7 +77,18 @@ export interface BusinessPlanSections {
 const Content = ({ companyData }: ContentProps) => {
   const { businessName, idea, place, uniqueTags } = companyData;
   const toast = useToast();
+  const { settings } = useSettings();
+  const colorScheme = useColorScheme();
+  const resolvedTheme =
+    settings.theme === 'system' ? (colorScheme === 'light' ? 'light' : 'dark') : settings.theme;
+  const isDark = resolvedTheme === 'dark';
+  const skeletonPalette = getContentSkeletonPalette(isDark);
+  const t = getContentCopy(settings.language);
   const [isCreatingBizPlan, setIsCreatingBizPlan] = useState(false);
+  const pendingPlanSuccessToastRef = useRef(false);
+  const quotaReachedRef = useRef(false);
+  const quotaToastShownRef = useRef(false);
+  const autoGenerationAttemptedRef = useRef<Set<string>>(new Set());
 
   const {
     data: activeCompany,
@@ -9220,15 +9233,6 @@ const Content = ({ companyData }: ContentProps) => {
     Պահպանիր ճշգրիտ JSON կառուցվածքը:
     `;
 
-  const chat = useAiChat({
-    history: [
-      {
-        role: "user",
-        text: initialMessage,
-      },
-    ],
-  });
-
   const extractJSONFromResponse = (text: string) => {
     const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
     if (jsonMatch) {
@@ -9243,53 +9247,58 @@ const Content = ({ companyData }: ContentProps) => {
     return text.trim();
   };
 
-  const generateBusinessPlan = async (retryCount = 0): Promise<void> => {
-    const MAX_RETRIES = 3;
-    if (!activeCompany?.id) {
+  const normalizeGeneratedPlan = (parsedTemplate: any): CompanyAdditionalDataDto => {
+    const today = new Date().toISOString().split("T")[0];
+    const generatedBusinessPlan = parsedTemplate?.business_plan ?? parsedTemplate;
+
+    if (!generatedBusinessPlan || typeof generatedBusinessPlan !== "object") {
+      throw new Error("Invalid business plan structure");
+    }
+
+    return {
+      business_plan: {
+        ...generatedBusinessPlan,
+        metadata: {
+          ...generatedBusinessPlan.metadata,
+          business_name: businessName,
+          idea,
+          location: place,
+          unique_tags: uniqueTags,
+          created_date: generatedBusinessPlan.metadata?.created_date || today,
+          last_updated: today,
+          version: generatedBusinessPlan.metadata?.version || "1.0.0",
+        },
+      },
+    };
+  };
+
+  const generateBusinessPlan = async (): Promise<void> => {
+    if (!activeCompany?.id || quotaReachedRef.current) {
       return;
     }
     try {
+      pendingPlanSuccessToastRef.current = true;
+
       setIsCreatingBizPlan(true);
 
-      const templateResponse = await chat.sendMessage({
-        message: businessPlanStructurePrompt
+      const generatedPlanPayload = await companyService.generateBusinessPlan(activeCompany.id, {
+        overwrite: true,
       });
-
-      const jsonText = extractJSONFromResponse(templateResponse.text!);
-      const cleanedJSON = jsonText;
-
-      let parsedTemplate;
-      try {
-        parsedTemplate = JSON.parse(cleanedJSON);
-      } catch (parseError) {
-        try {
-          parsedTemplate = JSON.parse(cleanedJSON);
-        } catch (e) {
-          const fixedJSON = cleanedJSON
-            .replace(/:\s*"([^"]*?)[\n\r]+([^"]*?)"/g, ': "$1 $2"')
-            .replace(/:\s*"([^"]*)"([^",}])/g, ': "$1"$2')
-            .replace(/[\x00-\x1F\x7F]/g, ' ');
-
-          parsedTemplate = JSON.parse(fixedJSON);
-        }
-      }
+      const parsedTemplate = generatedPlanPayload;
 
       if (parsedTemplate) {
-        if (!parsedTemplate.business_plan) {
-          console.error("Parsed template missing business_plan property");
-          throw new Error("Invalid business plan structure");
-        }
+        const normalizedPlan = normalizeGeneratedPlan(parsedTemplate);
 
-        const { pages, sections } = convertRendererSectionsToPageFormat(parsedTemplate);
+        const { pages, sections } = convertRendererSectionsToPageFormat(normalizedPlan);
         const total_pages = pages.length;
 
         const companyAdditionalData: CompanyAdditionalDataDto = {
           business_plan: {
-            ...parsedTemplate.business_plan,
+            ...normalizedPlan.business_plan,
             metadata: {
-              ...parsedTemplate.business_plan.metadata,
+              ...normalizedPlan.business_plan.metadata,
               total_pages,
-              version: parsedTemplate.business_plan.metadata?.version || "1.0.0"
+              version: normalizedPlan.business_plan.metadata?.version || "1.0.0"
             },
             presentation: {
               theme: {
@@ -9310,37 +9319,85 @@ const Content = ({ companyData }: ContentProps) => {
           data: companyAdditionalData.business_plan
         });
 
-        toast.showToast("Հաջողություն", "Ամբողջական բիզնես պլանը ստեղծված է", "success");
       } else {
         throw new Error("Could not parse JSON response");
       }
     } catch (error) {
-      console.error("Error generating business plan (attempt " + (retryCount + 1) + "):", error);
-      if (retryCount < MAX_RETRIES - 1) {
-        setIsCreatingBizPlan(false);
-        return generateBusinessPlan(retryCount + 1);
+      console.error("Error generating business plan:", error);
+
+      const errorMessage =
+        error instanceof Error ? error.message : typeof error === "string" ? error : JSON.stringify(error);
+      const isQuotaError =
+        errorMessage.includes("429") ||
+        errorMessage.includes("RESOURCE_EXHAUSTED") ||
+        errorMessage.includes("quota") ||
+        errorMessage.includes("rate limit");
+
+      if (isQuotaError) {
+        quotaReachedRef.current = true;
+        pendingPlanSuccessToastRef.current = false;
+
+        if (!quotaToastShownRef.current) {
+          quotaToastShownRef.current = true;
+          toast.showToast(
+            t.geminiLimitReached,
+            t.geminiLimitBody,
+            "warning",
+            5000
+          );
+        }
+        return;
       }
+      pendingPlanSuccessToastRef.current = false;
+      toast.showToast(t.error, t.planGenerationFailed, "error");
     } finally {
       setIsCreatingBizPlan(false);
     }
   };
 
   useEffect(() => {
-    if (activeCompany?.id && !isAdditionalDataLoading) {
-      if (!companyAdditionalData?.business_plan) {
+    if (pendingPlanSuccessToastRef.current && companyAdditionalData?.business_plan && !isCreatingBizPlan) {
+      pendingPlanSuccessToastRef.current = false;
+      toast.showToast(t.success, t.planReady, "success");
+    }
+  }, [companyAdditionalData?.business_plan, isCreatingBizPlan, toast]);
+
+  useEffect(() => {
+    if (activeCompany?.id && !isAdditionalDataLoading && !isCreatingBizPlan && !addBusinessPlan.isPending && !quotaReachedRef.current) {
+      const hasBusinessPlan = Boolean(companyAdditionalData?.business_plan);
+      const alreadyAttempted = autoGenerationAttemptedRef.current.has(activeCompany.id);
+
+      if (!hasBusinessPlan && !alreadyAttempted) {
+        autoGenerationAttemptedRef.current.add(activeCompany.id);
         generateBusinessPlan();
       }
     }
-  }, [activeCompany, isAdditionalDataLoading]);
+  }, [activeCompany, addBusinessPlan.isPending, companyAdditionalData?.business_plan, isAdditionalDataLoading, isCreatingBizPlan]);
 
   const renderContent = () => {
     if (isActiveCompanyDataLoading || isAdditionalDataLoading) {
       return (
         <View style={styles.container}>
-          <ScrollView>
-            <View style={styles.cardsGrid}>
-              {[1, 2, 3, 4, 5, 6].map((i) => (
-                <View key={i} style={styles.cardSkeleton}>
+          <View style={styles.cardsGrid}>
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <View key={i} style={styles.cardSkeleton}>
+                <MotiView
+                  from={{ opacity: 0.3 }}
+                  animate={{ opacity: 0.6 }}
+                  transition={{
+                    type: 'timing',
+                    duration: 1000,
+                    loop: true,
+                  }}
+                  style={[
+                    styles.cardTopSkeleton,
+                    {
+                      backgroundColor: skeletonPalette.surface,
+                      borderColor: skeletonPalette.border,
+                    },
+                  ]}
+                />
+                <View style={styles.cardBottomSkeleton}>
                   <MotiView
                     from={{ opacity: 0.3 }}
                     animate={{ opacity: 0.6 }}
@@ -9349,34 +9406,22 @@ const Content = ({ companyData }: ContentProps) => {
                       duration: 1000,
                       loop: true,
                     }}
-                    style={styles.cardTopSkeleton}
+                    style={[styles.titleSkeleton, { backgroundColor: skeletonPalette.line }]}
                   />
-                  <View style={styles.cardBottomSkeleton}>
-                    <MotiView
-                      from={{ opacity: 0.3 }}
-                      animate={{ opacity: 0.6 }}
-                      transition={{
-                        type: 'timing',
-                        duration: 1000,
-                        loop: true,
-                      }}
-                      style={styles.titleSkeleton}
-                    />
-                    <MotiView
-                      from={{ opacity: 0.2 }}
-                      animate={{ opacity: 0.4 }}
-                      transition={{
-                        type: 'timing',
-                        duration: 1000,
-                        loop: true,
-                      }}
-                      style={styles.descSkeleton}
-                    />
-                  </View>
+                  <MotiView
+                    from={{ opacity: 0.2 }}
+                    animate={{ opacity: 0.4 }}
+                    transition={{
+                      type: 'timing',
+                      duration: 1000,
+                      loop: true,
+                    }}
+                    style={[styles.descSkeleton, { backgroundColor: skeletonPalette.lineSoft }]}
+                  />
                 </View>
-              ))}
-            </View>
-          </ScrollView>
+              </View>
+            ))}
+          </View>
         </View>
       );
     }
@@ -9384,12 +9429,12 @@ const Content = ({ companyData }: ContentProps) => {
     if (activePlanError) {
       return (
         <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>Սխալ բեռնման ժամանակ</Text>
+          <Text style={styles.errorText}>{t.activePlanError}</Text>
           <TouchableOpacity
             style={styles.retryButton}
             onPress={() => refreshActivePlanData()}
           >
-            <Text style={styles.retryButtonText}>Կրկին փորձել</Text>
+            <Text style={styles.retryButtonText}>{t.tryAgain}</Text>
           </TouchableOpacity>
         </View>
       );
@@ -9397,25 +9442,71 @@ const Content = ({ companyData }: ContentProps) => {
 
     return (
       <View style={styles.container}>
-        <ScrollView>
-          <View style={styles.cardsGrid}>
-            {cardData.map((data) => (
-              <Card
-                key={data.id}
-                addBusinessPlan={addBusinessPlan}
-                data={data as CardDataItem}
-                companyData={companyData}
-                isCreatingBizPlan={isCreatingBizPlan}
-              />
-            ))}
-          </View>
-        </ScrollView>
+        <View style={styles.cardsGrid}>
+          {cardData.map((data) => (
+            <Card
+              key={data.id}
+              addBusinessPlan={addBusinessPlan}
+              data={data as CardDataItem}
+              companyData={companyData}
+              isCreatingBizPlan={isCreatingBizPlan}
+            />
+          ))}
+        </View>
       </View>
     );
   };
 
   return renderContent();
 };
+
+function getContentSkeletonPalette(isDark: boolean) {
+  return {
+    surface: isDark ? "rgba(255,255,255,0.10)" : "rgba(15,23,42,0.10)",
+    line: isDark ? "rgba(255,255,255,0.12)" : "rgba(15,23,42,0.14)",
+    lineSoft: isDark ? "rgba(255,255,255,0.065)" : "rgba(15,23,42,0.08)",
+    border: isDark ? "rgba(255,255,255,0.10)" : "rgba(15,23,42,0.10)",
+  };
+}
+
+function getContentCopy(language: "en" | "ru" | "hy") {
+  if (language === "ru") {
+    return {
+      geminiLimitReached: "Лимит Gemini исчерпан",
+      geminiLimitBody: "Дневная квота Gemini исчерпана, поэтому автогенерация приостановлена. Попробуйте позже или используйте ключ с большей квотой.",
+      error: "Ошибка",
+      planGenerationFailed: "Генерация бизнес-плана не удалась. Проверьте Gemini API key и попробуйте снова.",
+      success: "Готово",
+      planReady: "Ваш бизнес-план готов.",
+      activePlanError: "Ошибка загрузки",
+      tryAgain: "Попробовать снова",
+    };
+  }
+
+  if (language === "hy") {
+    return {
+      geminiLimitReached: "Gemini-ի լիմիտը ավարտվել է",
+      geminiLimitBody: "Gemini-ի օրական քվոտան ավարտվել է, ուստի ավտոգեներացիան դադարեցվել է։ Փորձեք ավելի ուշ կամ օգտագործեք ավելի մեծ քվոտայով key։",
+      error: "Սխալ",
+      planGenerationFailed: "Բիզնես պլանի գեներացիան ձախողվեց։ Ստուգեք Gemini API key-ը և փորձեք կրկին։",
+      success: "Պատրաստ է",
+      planReady: "Ձեր բիզնես պլանը պատրաստ է։",
+      activePlanError: "Սխալ բեռնման ժամանակ",
+      tryAgain: "Կրկին փորձել",
+    };
+  }
+
+  return {
+    geminiLimitReached: "Gemini limit reached",
+    geminiLimitBody: "Daily Gemini quota is exhausted, so auto-generation has been paused. Try again later or use a key with higher quota.",
+    error: "Error",
+    planGenerationFailed: "Business plan generation failed. Please verify your Gemini API key and try again.",
+    success: "Success",
+    planReady: "Your business plan is ready.",
+    activePlanError: "Loading error",
+    tryAgain: "Try again",
+  };
+}
 
 const styles = StyleSheet.create({
   container: {
@@ -9566,6 +9657,7 @@ const styles = StyleSheet.create({
     height: 120,
     backgroundColor: "rgba(255, 255, 255, 0.1)",
     borderRadius: 12,
+    borderWidth: 1,
   },
   cardBottomSkeleton: {
     paddingTop: 8,

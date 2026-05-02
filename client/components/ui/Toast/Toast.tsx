@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Platform, Modal } from 'react-native';
 import { MotiView, AnimatePresence } from 'moti';
 import {
    CheckCircle2,
@@ -192,11 +192,29 @@ export const ToastProvider = ({ children }: { children: React.ReactNode }) => {
          {children}
          <View style={[styles.toastWrapper, { top: insets.top + 10 }]} pointerEvents="box-none">
             <AnimatePresence>
-               {toasts.map(toast => (
+               {toasts.filter((toast) => !toast.onConfirm).map(toast => (
                   <ToastItem key={toast.id} toast={toast} onDismiss={dismissToast} />
                ))}
             </AnimatePresence>
          </View>
+         <Modal
+            visible={toasts.some((toast) => Boolean(toast.onConfirm))}
+            transparent
+            animationType="fade"
+            statusBarTranslucent
+            onRequestClose={() => {
+               const confirmToast = toasts.find((toast) => Boolean(toast.onConfirm));
+               if (confirmToast) dismissToast(confirmToast.id);
+            }}
+         >
+            <View style={styles.confirmOverlay}>
+               <AnimatePresence>
+                  {toasts.filter((toast) => Boolean(toast.onConfirm)).slice(-1).map(toast => (
+                     <ToastItem key={toast.id} toast={toast} onDismiss={dismissToast} />
+                  ))}
+               </AnimatePresence>
+            </View>
+         </Modal>
       </ToastContext.Provider>
    );
 };
@@ -220,6 +238,15 @@ const styles = StyleSheet.create({
       elevation: 99999,
       alignItems: 'center',
       gap: 10,
+   },
+   confirmOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0, 0, 0, 0.58)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingHorizontal: 16,
+      zIndex: 100000,
+      elevation: 100000,
    },
    toastContainer: {
       width: screenWidth - 32,

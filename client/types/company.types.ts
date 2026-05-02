@@ -32,6 +32,10 @@ export type UpdateCompanyDto = {
 }
 
 export type CompanyFinancialDataDto = {
+   startupCost?: number;
+   monthlyRevenue?: number;
+   monthlyCost?: number;
+   fundingNeeded?: number;
    revenue?: number;
    expenses?: number;
    profit?: number;
@@ -48,6 +52,8 @@ export type ApiResponse<T = any> = {
    data?: T;
    message?: string;
    error?: string;
+   status?: number;
+   statusCode?: number;
 }
 
 export type AdditionalDataResponse = {
