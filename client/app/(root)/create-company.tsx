@@ -20,6 +20,7 @@ import { useCreateCompany } from "@/hooks/useCompanyQueries";
 import { useToast } from "@/components/ui/Toast/Toast";
 import { useSettings } from "@/lib/settings-context";
 import { generateCompanyDraft } from "@/lib/company-ai";
+import { companyService } from "@/services/company.service";
 
 export default function CreateCompanyScreen() {
   const toast = useToast();
@@ -103,9 +104,14 @@ export default function CreateCompanyScreen() {
 
     try {
       setCreateMode(mode);
-      await createCompany.mutateAsync(payload);
+      const company = await createCompany.mutateAsync(payload);
 
       if (mode === "generate" || settings.autoGeneratePlanOnCreate) {
+        void companyService.generateBusinessPlan(company.id, {
+          overwrite: true,
+          language: settings.language,
+        }).catch(() => null);
+
         const targetRoute = settings.openPlanAfterGeneration
           ? "/(root)/(tabs)/plan"
           : "/(root)/(tabs)/(dashboard)";

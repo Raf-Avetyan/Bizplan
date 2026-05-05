@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Image as RNImage, Keyboard, KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Text, TextInput, View, useColorScheme, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -26,6 +26,7 @@ type ExportKind = "pdf" | "json" | "canva" | "html" | "ppt" | "svg";
 type DrawingTool = "pen" | "pencil" | "marker" | null;
 type DesignElement = { id: string; type: ElementType; text: string; x: number; y: number; width: number; height: number; color: string; backgroundColor: string; fontSize: number; radius: number; fontWeight?: "600" | "800" | "900"; fontStyle?: "normal" | "italic"; fontFamily?: string; letterSpacing?: number; lineHeight?: number; textDecorationLine?: "none" | "underline" | "line-through" | "underline line-through"; textTransform?: "none" | "uppercase" | "lowercase" | "capitalize"; opacity?: number; imageUri?: string; imageFit?: "cover" | "contain" | "stretch"; blurRadius?: number; borderColor?: string; borderWidth?: number; borderStyle?: "solid" | "dashed" | "dotted"; textAlign?: "left" | "center" | "right"; rotation?: number; shadow?: boolean; animation?: "none" | "fade" | "pop" | "rise" | "pan" | "breathe" | "tumble"; textEffect?: "none" | "shadow" | "lift" | "outline" | "glow" | "background"; imageFilter?: "none" | "warm" | "cool" | "mono" | "vivid"; shadowColor?: string; shapeKind?: ShapeKind };
 type DesignPage = { id: string; title: string; format: Format; background: string; elements: DesignElement[] };
+type PitchDeckVersion = { id: string; title: string; savedAt: string; pageCount: number; pages: DesignPage[] };
 type SavedDocument = { generatedAt: string; sections: Array<{ title: string; body: string; bullets?: string[] }> };
 type OldSlide = { id: string; title: string; subtitle: string; bullets: string[]; accent: string };
 
@@ -37,8 +38,10 @@ const BACKGROUND_TOPICS = [
   "paper texture", "soft fabric texture", "blue abstract background", "warm sunset gradient", "white marble texture", "lavender field", "wood texture", "minimal studio backdrop", "water texture", "green botanical background", "concrete wall texture", "cream paper", "pastel gradient", "dark luxury texture", "gold foil texture", "linen background", "cloud background", "geometric pattern", "light workspace background", "neutral product backdrop",
 ];
 function imageSearchUri(topic: string, index: number, size: "square" | "wide" = "square") {
-  const dimensions = size === "wide" ? "1200x900" : "900x900";
-  return `https://source.unsplash.com/${dimensions}/?${encodeURIComponent(topic)}&sig=${index + 101}`;
+  const width = size === "wide" ? 1200 : 900;
+  const height = size === "wide" ? 900 : 900;
+  const seed = encodeURIComponent(`${topic}-${index}`);
+  return `https://picsum.photos/seed/${seed}/${width}/${height}`;
 }
 function titleCase(value: string) {
   return value.replace(/\w/g, (letter) => letter.toUpperCase());
@@ -84,7 +87,8 @@ function exportShareOptions(kind: ExportKind) {
   if (kind === "svg") return { mimeType: "image/svg+xml", UTI: "public.svg-image", dialogTitle: "Export SVG" };
   if (kind === "pdf") return { mimeType: "application/pdf", UTI: "com.adobe.pdf", dialogTitle: "Export PDF" };
   if (kind === "json" || kind === "canva") return { mimeType: "application/json", UTI: "public.json", dialogTitle: "Export project" };
-  return { mimeType: "text/html", UTI: "public.html", dialogTitle: kind === "ppt" ? "Export PowerPoint-compatible HTML" : "Export HTML" };
+  if (kind === "ppt") return { mimeType: "text/html", UTI: "public.html", dialogTitle: "Export PowerPoint-compatible HTML" };
+  return { mimeType: "text/html", UTI: "public.html", dialogTitle: "Export HTML" };
 }
 
 function getPalette(isDark: boolean) {
@@ -108,6 +112,7 @@ function getPalette(isDark: boolean) {
 function getCopy(language: Language, kind: ToolKind) {
   const en = {
     save: "Save", saved: "Saved", copied: "Copied", error: "Error", failedSave: "Failed to save", savedSuccess: "Saved to company workspace.", regenerate: "Regenerate",
+    history: "History", noHistory: "No saved versions yet.", restore: "Restore", currentVersion: "Current version",
     noCompany: "No active company", noCompanyBody: "Create or activate a company first so this tool can use the right business context.",
     title: kind === "pitch-deck" ? "Canva studio" : kind === "guides" ? "Founder guides" : "Market research",
     eyebrow: kind === "pitch-deck" ? "Hands-on editor" : kind === "guides" ? "Action guides" : "Research workspace",
@@ -121,6 +126,7 @@ function getCopy(language: Language, kind: ToolKind) {
   if (language === "ru") return {
     ...en,
     save: "\u0421\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c", saved: "\u0421\u043e\u0445\u0440\u0430\u043d\u0435\u043d\u043e", copied: "\u0421\u043a\u043e\u043f\u0438\u0440\u043e\u0432\u0430\u043d\u043e", error: "\u041e\u0448\u0438\u0431\u043a\u0430", failedSave: "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0441\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c", savedSuccess: "\u0421\u043e\u0445\u0440\u0430\u043d\u0435\u043d\u043e \u0432 \u0440\u0430\u0431\u043e\u0447\u0435\u0439 \u043e\u0431\u043b\u0430\u0441\u0442\u0438 \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438.", regenerate: "\u0421\u0433\u0435\u043d\u0435\u0440\u0438\u0440\u043e\u0432\u0430\u0442\u044c \u0437\u0430\u043d\u043e\u0432\u043e",
+    history: "\u0418\u0441\u0442\u043e\u0440\u0438\u044f", noHistory: "\u0415\u0449\u0451 \u043d\u0435\u0442 \u0441\u043e\u0445\u0440\u0430\u043d\u0451\u043d\u043d\u044b\u0445 \u0432\u0435\u0440\u0441\u0438\u0439.", restore: "\u0412\u043e\u0441\u0441\u0442\u0430\u043d\u043e\u0432\u0438\u0442\u044c", currentVersion: "\u0422\u0435\u043a\u0443\u0449\u0430\u044f \u0432\u0435\u0440\u0441\u0438\u044f",
     noCompany: "\u041d\u0435\u0442 \u0430\u043a\u0442\u0438\u0432\u043d\u043e\u0439 \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u0438", noCompanyBody: "\u0421\u043d\u0430\u0447\u0430\u043b\u0430 \u0441\u043e\u0437\u0434\u0430\u0439\u0442\u0435 \u0438\u043b\u0438 \u0432\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u043a\u043e\u043c\u043f\u0430\u043d\u0438\u044e.",
     title: kind === "pitch-deck" ? "Canva-\u0441\u0442\u0443\u0434\u0438\u044f" : kind === "guides" ? "\u0413\u0430\u0439\u0434\u044b \u043e\u0441\u043d\u043e\u0432\u0430\u0442\u0435\u043b\u044f" : "\u0418\u0441\u0441\u043b\u0435\u0434\u043e\u0432\u0430\u043d\u0438\u0435 \u0440\u044b\u043d\u043a\u0430",
     eyebrow: kind === "pitch-deck" ? "\u0420\u0443\u0447\u043d\u043e\u0439 \u0440\u0435\u0434\u0430\u043a\u0442\u043e\u0440" : kind === "guides" ? "\u041f\u0440\u0430\u043a\u0442\u0438\u0447\u0435\u0441\u043a\u0438\u0435 \u0433\u0430\u0439\u0434\u044b" : "\u0420\u0430\u0431\u043e\u0447\u0435\u0435 \u043f\u0440\u043e\u0441\u0442\u0440\u0430\u043d\u0441\u0442\u0432\u043e",
@@ -136,8 +142,8 @@ function getCopy(language: Language, kind: ToolKind) {
 }
 function makeElement(type: ElementType, overrides: Partial<DesignElement> = {}): DesignElement {
   const base: Record<ElementType, Omit<DesignElement, "id">> = {
-    heading: { type: "heading", text: "Big headline", x: 8, y: 10, width: 72, height: 12, color: "#111827", backgroundColor: "transparent", fontSize: 26, radius: 0 },
-    text: { type: "text", text: "Supporting description", x: 8, y: 28, width: 70, height: 10, color: "#334155", backgroundColor: "transparent", fontSize: 14, radius: 0 },
+    heading: { type: "heading", text: "Big headline", x: 8, y: 10, width: 72, height: 16, color: "#111827", backgroundColor: "transparent", fontSize: 26, radius: 0 },
+    text: { type: "text", text: "Supporting description", x: 8, y: 28, width: 70, height: 14, color: "#334155", backgroundColor: "transparent", fontSize: 14, radius: 0 },
     shape: { type: "shape", text: "", x: 12, y: 58, width: 36, height: 18, color: "#111827", backgroundColor: "#E8F3EF", fontSize: 12, radius: 16 },
     image: { type: "image", text: "Image", x: 54, y: 42, width: 36, height: 30, color: "#475569", backgroundColor: "#EEF2FF", fontSize: 13, radius: 18 },
     badge: { type: "badge", text: "NEW", x: 8, y: 6, width: 28, height: 7, color: "#111827", backgroundColor: "#DFAE55", fontSize: 12, radius: 999 },
@@ -148,6 +154,12 @@ function makeElement(type: ElementType, overrides: Partial<DesignElement> = {}):
 
 function makePage(title: string, format: Format, elements: DesignElement[] = []): DesignPage {
   return { id: uid("page"), title, format, background: "#FFFFFF", elements };
+}
+function clonePages(items: DesignPage[]) {
+  return items.map((page) => ({
+    ...page,
+    elements: page.elements.map((element) => ({ ...element })),
+  }));
 }
 
 function buildTemplate(template: Format | "pitch", companyName: string, idea: string, tags: string[]): DesignPage[] {
@@ -453,10 +465,14 @@ export default function DashboardToolDetailScreen({ kind }: { kind: ToolKind }) 
   const [pages, setPages] = useState<DesignPage[]>([]);
   const [history, setHistory] = useState<DesignPage[][]>([]);
   const [future, setFuture] = useState<DesignPage[][]>([]);
+  const [savedVersions, setSavedVersions] = useState<PitchDeckVersion[]>([]);
+  const [historyVisible, setHistoryVisible] = useState(false);
   const [selectedPageId, setSelectedPageId] = useState("");
   const [selectedElementId, setSelectedElementId] = useState("");
   const [isPageSelected, setIsPageSelected] = useState(false);
   const [canvasSize, setCanvasSize] = useState({ width: 1, height: 1 });
+  const canvasRef = useRef<View>(null);
+  const [canvasFrame, setCanvasFrame] = useState({ x: 0, y: 0, width: 1, height: 1 });
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [activePanel, setActivePanel] = useState<EditorPanel>(null);
   const [panelSearch, setPanelSearch] = useState("");
@@ -469,14 +485,27 @@ export default function DashboardToolDetailScreen({ kind }: { kind: ToolKind }) 
 
   useEffect(() => {
     if (kind === "pitch-deck") {
-      const saved = (additionalData as Record<string, unknown> | undefined)?.pitch_deck as { pages?: DesignPage[]; slides?: OldSlide[] } | undefined;
-      const nextPages = saved?.pages?.length ? saved.pages : saved?.slides?.length ? mapOldSlides(saved.slides) : defaultPages;
+      const saved = (additionalData as Record<string, unknown> | undefined)?.pitch_deck as { pages?: DesignPage[]; slides?: OldSlide[]; updatedAt?: string } | undefined;
+      const versionHistory = (additionalData as Record<string, unknown> | undefined)?.pitch_deck_history as PitchDeckVersion[] | undefined;
+      const latestHistoryVersion = Array.isArray(versionHistory) ? versionHistory[0] : undefined;
+      const hasSavedDeck = Boolean(
+        latestHistoryVersion?.pages?.length || saved?.pages?.length || saved?.slides?.length
+      );
+      const nextPages = latestHistoryVersion?.pages?.length
+        ? latestHistoryVersion.pages
+        : saved?.pages?.length
+          ? saved.pages
+          : saved?.slides?.length
+            ? mapOldSlides(saved.slides)
+            : defaultPages;
       setPages(nextPages);
+      setSavedVersions(Array.isArray(versionHistory) ? versionHistory : []);
       setHistory([]);
       setFuture([]);
       setSelectedPageId(nextPages[0]?.id ?? "");
       setSelectedElementId(nextPages[0]?.elements[0]?.id ?? "");
       setIsPageSelected(!nextPages[0]?.elements[0]);
+      setIsEditorOpen(hasSavedDeck);
     } else {
       const key = kind === "guides" ? "guides_document" : "market_research_document";
       const saved = (additionalData as Record<string, unknown> | undefined)?.[key] as SavedDocument | undefined;
@@ -487,6 +516,22 @@ export default function DashboardToolDetailScreen({ kind }: { kind: ToolKind }) 
   const selectedPage = pages.find((page) => page.id === selectedPageId) ?? pages[0];
   const selectedElement = selectedPage?.elements.find((item) => item.id === selectedElementId);
   const displayZoom = isLandscape ? Math.min(canvasZoom, 0.68) : canvasZoom;
+
+  function syncCanvasFrame() {
+    requestAnimationFrame(() => {
+      canvasRef.current?.measureInWindow((x, y, width, height) => {
+        if (width > 0 && height > 0) {
+          setCanvasFrame({ x, y, width, height });
+        }
+      });
+    });
+  }
+
+  useEffect(() => {
+    if (kind === "pitch-deck" && isEditorOpen) {
+      syncCanvasFrame();
+    }
+  }, [displayZoom, isEditorOpen, kind, screen.height, screen.width, selectedPageId]);
 
   const drawingResponder = useMemo(() => PanResponder.create({
     onStartShouldSetPanResponder: () => !!drawingTool,
@@ -567,6 +612,53 @@ export default function DashboardToolDetailScreen({ kind }: { kind: ToolKind }) 
     setFuture((items) => items.slice(1));
     setPages(next);
     syncSelection(next);
+  }
+  async function savePitchDeck(pagesToSave: DesignPage[] = pages, versionTitle?: string) {
+    if (!activeCompany?.id) return;
+    setIsSaving(true);
+    try {
+      const savedAt = new Date().toISOString();
+      const deckPages = clonePages(pagesToSave);
+      const nextVersion: PitchDeckVersion = {
+        id: uid("pitch-version"),
+        title: versionTitle ?? deckPages[0]?.title ?? activeCompany.businessName ?? t.currentVersion,
+        savedAt,
+        pageCount: deckPages.length,
+        pages: deckPages,
+      };
+      const nextHistory = [nextVersion, ...savedVersions].slice(0, 20);
+      const liveDeck = {
+        pages: deckPages,
+        updatedAt: savedAt,
+        versionId: nextVersion.id,
+      };
+      await Promise.all([
+        companyService.setAdditionalDataValue(activeCompany.id, "pitch_deck", liveDeck),
+        companyService.setAdditionalDataValue(activeCompany.id, "pitch_deck_history", nextHistory),
+      ]);
+      setSavedVersions(nextHistory);
+      queryClient.setQueryData(["companyAdditionalData", activeCompany.id], (current: Record<string, unknown> | undefined) => ({
+        ...(current ?? {}),
+        pitch_deck: liveDeck,
+        pitch_deck_history: nextHistory,
+      }));
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["companyAdditionalData", activeCompany.id] }),
+        queryClient.invalidateQueries({ queryKey: ["activeCompany"] }),
+      ]);
+      toast.showToast(t.saved, t.savedSuccess, "success");
+    } catch (error) {
+      toast.showToast(t.error, error instanceof Error ? error.message : t.failedSave, "error");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+  async function restoreSavedVersion(version: PitchDeckVersion) {
+    const restoredPages = clonePages(version.pages);
+    commitPages(restoredPages);
+    syncSelection(restoredPages);
+    setHistoryVisible(false);
+    await savePitchDeck(restoredPages, version.title);
   }
   async function saveValue(key: string, value: unknown) {
     if (!activeCompany?.id) return;
@@ -750,9 +842,9 @@ export default function DashboardToolDetailScreen({ kind }: { kind: ToolKind }) 
         await shareExport(result.uri, "pdf");
         return;
       }
-      const extension = kind === "json" || kind === "canva" ? "json" : kind === "ppt" ? "html" : "html";
+      const extension = kind === "json" || kind === "canva" ? "json" : "html";
       const body = kind === "json" || kind === "canva" ? JSON.stringify({ pages, exportedAt: new Date().toISOString(), format: kind === "canva" ? "canva-import" : "bizplan-project" }, null, 2) : html;
-      const fileName = kind === "ppt" ? "bizplan-presentation-powerpoint.html" : kind === "canva" ? "bizplan-canva-project.json" : `bizplan-design.${extension}`;
+      const fileName = kind === "ppt" ? "bizplan-presentation-powerpoint-compatible.html" : kind === "canva" ? "bizplan-canva-project.json" : `bizplan-design.${extension}`;
       const uri = await writeExportFile(fileName, body);
       await shareExport(uri, kind);
     } catch (error) {
@@ -784,12 +876,13 @@ export default function DashboardToolDetailScreen({ kind }: { kind: ToolKind }) 
             <Pressable disabled={!history.length} onPress={undoDesign} style={[styles.canvaIconButton, !history.length ? styles.disabledIconButton : null]}><Undo2 size={18} color={history.length ? palette.text : palette.muted} /></Pressable>
             <Pressable disabled={!future.length} onPress={redoDesign} style={[styles.canvaIconButton, !future.length ? styles.disabledIconButton : null]}><Redo2 size={18} color={future.length ? palette.text : palette.muted} /></Pressable>
             <Pressable onPress={() => void copyDocument()} style={styles.canvaIconButton}><Copy size={18} color={palette.text} /></Pressable>
-            <Pressable disabled={isSaving} onPress={() => saveValue("pitch_deck", { pages, updatedAt: new Date().toISOString() })} style={styles.canvaSaveButton}>{isSaving ? <ActivityIndicator color="#fff" /> : <Save size={18} color="#fff" />}</Pressable>
+            <Pressable onPress={() => setHistoryVisible(true)} style={styles.canvaIconButton}><Folder size={18} color={palette.text} /></Pressable>
+            <Pressable disabled={isSaving} onPress={() => void savePitchDeck()} style={styles.canvaSaveButton}>{isSaving ? <ActivityIndicator color="#fff" /> : <Save size={18} color="#fff" />}</Pressable>
           </View>
 
           <PinchZoomStage zoom={canvasZoom} landscape={isLandscape} onZoom={setCanvasZoom} onPress={() => { Keyboard.dismiss(); setSelectedElementId(""); setIsPageSelected(false); }}>
-            <Pressable {...(drawingTool ? drawingResponder.panHandlers : {})} onPress={(event) => { event.stopPropagation(); if (drawingTool) return; Keyboard.dismiss(); setSelectedElementId(""); setIsPageSelected(true); }} onLayout={(event) => setCanvasSize(event.nativeEvent.layout)} style={[styles.blankPage, isLandscape ? styles.blankPageLandscape : null, baseCanvasStyleFor(selectedPage.format), isPageSelected && !selectedElement ? { borderWidth: 2, borderColor: palette.purple } : null, { backgroundColor: selectedPage.background, transform: [{ scale: displayZoom }] }]}>
-              {selectedPage.elements.map((item) => <DesignBlock key={item.id} item={item} selected={item.id === selectedElementId} canvasSize={canvasSize} onPress={() => { setSelectedElementId(item.id); setIsPageSelected(false); }} onMove={(x, y) => updateElement(item.id, (current) => ({ ...current, x: clamp(x, 0, 94), y: clamp(y, 0, 94) }))} onResize={(width, height, fontSize) => updateElement(item.id, (current) => ({ ...current, width: clamp(width, 7, 95), height: clamp(height, 5, 92), fontSize: clamp(fontSize, 8, 72) }))} />)}
+            <Pressable ref={canvasRef} {...(drawingTool ? drawingResponder.panHandlers : {})} onPress={(event) => { event.stopPropagation(); if (drawingTool) return; Keyboard.dismiss(); setSelectedElementId(""); setIsPageSelected(true); }} onLayout={(event) => { setCanvasSize(event.nativeEvent.layout); syncCanvasFrame(); }} style={[styles.blankPage, isLandscape ? styles.blankPageLandscape : null, baseCanvasStyleFor(selectedPage.format), isPageSelected && !selectedElement ? { borderWidth: 2, borderColor: palette.purple } : null, { backgroundColor: selectedPage.background, transform: [{ scale: displayZoom }] }]}>
+              {selectedPage.elements.map((item) => <DesignBlock key={item.id} item={item} selected={item.id === selectedElementId} canvasSize={canvasSize} canvasFrame={canvasFrame} zoomScale={displayZoom} onPress={() => { setSelectedElementId(item.id); setIsPageSelected(false); }} onMove={(x, y) => updateElement(item.id, (current) => ({ ...current, x: clamp(x, 0, Math.max(0, 100 - current.width)), y: clamp(y, 0, Math.max(0, 100 - current.height)) }))} onResize={(width, height, fontSize) => updateElement(item.id, (current) => { const nextWidth = clamp(width, 7, Math.max(7, 100 - current.x)); const nextHeight = clamp(height, 5, Math.max(5, 100 - current.y)); return { ...current, width: nextWidth, height: nextHeight, fontSize: clamp(fontSize, 8, 72) }; })} />)}
 
             </Pressable>
           </PinchZoomStage>
@@ -801,6 +894,35 @@ export default function DashboardToolDetailScreen({ kind }: { kind: ToolKind }) 
             <PageStrip pages={pages} selectedPageId={selectedPageId} palette={palette} onSelect={(page) => { setSelectedPageId(page.id); setSelectedElementId(page.elements[0]?.id ?? ""); setIsPageSelected(!page.elements[0]); }} onAdd={addPage} onDelete={deletePage} />
             <ActiveBottomTools selectedElement={selectedElement} pageSelected={isPageSelected && !selectedElement} palette={palette} t={t} onColor={setSelectedElementColor} onDuplicate={duplicateElement} onDelete={deleteElement} onForward={() => moveLayer("front")} onBack={() => moveLayer("back")} onOpenPanel={(panel) => { setPanelSearch(""); setActivePanel(panel); }} onAddElement={addElement} onAddPage={addPage} onPageColor={(color) => updateSelectedPage((page) => ({ ...page, background: color }))} onStyleElement={updateSelectedElementStyle} onAdjustFont={adjustSelectedFont} onReplaceImage={replaceSelectedImage} onZoomIn={() => setCanvasZoom((value) => clamp(value + 0.08, 0.5, 1.8))} onZoomOut={() => setCanvasZoom((value) => clamp(value - 0.08, 0.5, 1.8))} />
           </View>
+          <Modal visible={historyVisible} animationType="fade" transparent onRequestClose={() => setHistoryVisible(false)}>
+            <View style={styles.sheetOverlay}>
+              <KeyboardAvoidingView style={styles.sheetModalRoot} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+                <Pressable style={styles.sheetBackdrop} onPress={() => setHistoryVisible(false)} />
+                <View style={[styles.editorSheet, { backgroundColor: palette.card, borderColor: palette.border }]}>
+                  <View style={styles.sheetHandle} />
+                  <View style={styles.sheetHeader}>
+                    <Text style={[styles.sheetTitle, { color: palette.text }]}>{t.history}</Text>
+                    <Pressable onPress={() => setHistoryVisible(false)} style={[styles.sheetClose, { backgroundColor: palette.chip }]}><XIcon size={18} color={palette.text} /></Pressable>
+                  </View>
+                  <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.sheetList}>
+                    {savedVersions.length ? savedVersions.map((version) => (
+                      <View key={version.id} style={[styles.historyCard, { borderColor: palette.border, backgroundColor: palette.chip }]}>
+                        <View style={styles.historyCardHeader}>
+                          <View style={styles.historyMeta}>
+                            <Text style={[styles.historyTitle, { color: palette.text }]} numberOfLines={1}>{version.title}</Text>
+                            <Text style={[styles.historyBody, { color: palette.muted }]}>{new Date(version.savedAt).toLocaleString()} · {version.pageCount} {t.pages.toLowerCase()}</Text>
+                          </View>
+                          <Pressable onPress={() => void restoreSavedVersion(version)} style={styles.historyRestoreButton}>
+                            <Text style={styles.historyRestoreText}>{t.restore}</Text>
+                          </Pressable>
+                        </View>
+                      </View>
+                    )) : <Text style={[styles.sheetRowBody, { color: palette.muted }]}>{t.noHistory}</Text>}
+                  </ScrollView>
+                </View>
+              </KeyboardAvoidingView>
+            </View>
+          </Modal>
           <EditorPanelSheet activePanel={activePanel} search={panelSearch} t={t} palette={palette} pages={pages} currentFormat={selectedPage.format} selectedElement={selectedElement} pageSelected={isPageSelected && !selectedElement} onSearch={setPanelSearch} onPanelChange={(panel) => { setPanelSearch(""); setActivePanel(panel); }} onClose={() => setActivePanel(null)} onApplyPageTemplate={applyPageTemplate} onApplyDeckTemplate={applyDeckTemplate} onAddElement={addElement} onAddPreset={addElementPreset} onStyleElement={updateSelectedElementStyle} onAdjustFont={adjustSelectedFont} onStylePage={(color) => updateSelectedPage((page) => ({ ...page, background: color }))} onReplaceImage={replaceSelectedImage} onExport={exportDesign} onAddPage={addPage} onPickUpload={pickAndAddMedia} onAddPhoto={addPhotoFromUri} onSetBackgroundPhoto={setBackgroundPhoto} onSetDrawingTool={setDrawingTool} onSelectPage={(page) => { setSelectedPageId(page.id); setSelectedElementId(page.elements[0]?.id ?? ""); setIsPageSelected(!page.elements[0]); setActivePanel(null); }} />
           </KeyboardAvoidingView>
         </SafeAreaView>
@@ -930,7 +1052,7 @@ function DrawnShape({ item }: { item: DesignElement }) {
   if (kind === "checklist") return <View style={styles.drawnChecklist}>{[0, 1, 2].map((row) => <View key={row} style={styles.drawnChecklistRow}><View style={[styles.drawnChecklistDot, { backgroundColor: fill }]} /><View style={styles.drawnChecklistLine} /></View>)}</View>;
   return null;
 }
-function DesignBlock({ item, selected, canvasSize, onPress, onMove, onResize }: { item: DesignElement; selected: boolean; canvasSize: { width: number; height: number }; onPress: () => void; onMove: (x: number, y: number) => void; onResize: (width: number, height: number, fontSize: number) => void }) {
+function DesignBlock({ item, selected, canvasSize, canvasFrame, zoomScale, onPress, onMove, onResize }: { item: DesignElement; selected: boolean; canvasSize: { width: number; height: number }; canvasFrame: { x: number; y: number; width: number; height: number }; zoomScale: number; onPress: () => void; onMove: (x: number, y: number) => void; onResize: (width: number, height: number, fontSize: number) => void }) {
   const isTextOnly = item.type === "heading" || item.type === "text";
   const [frame, setFrame] = useState({ x: item.x, y: item.y, width: item.width, height: item.height, fontSize: item.fontSize });
   const frameRef = useRef(frame);
@@ -956,15 +1078,20 @@ function DesignBlock({ item, selected, canvasSize, onPress, onMove, onResize }: 
     onPanResponderGrant: beginGesture,
     onPanResponderTerminationRequest: () => false,
     onPanResponderMove: (_, gesture) => {
-      const dx = canvasSize.width > 0 ? (gesture.dx / canvasSize.width) * 100 : 0;
-      const dy = canvasSize.height > 0 ? (gesture.dy / canvasSize.height) * 100 : 0;
-      const next = { ...frameRef.current, x: clamp(startRef.current.x + dx, 0, 94), y: clamp(startRef.current.y + dy, 0, 94) };
+      const effectiveZoom = Math.max(zoomScale || 1, 0.5);
+      const dx = canvasSize.width > 0 ? ((gesture.dx / effectiveZoom) / canvasSize.width) * 100 : 0;
+      const dy = canvasSize.height > 0 ? ((gesture.dy / effectiveZoom) / canvasSize.height) * 100 : 0;
+      const next = {
+        ...frameRef.current,
+        x: clamp(startRef.current.x + dx, 0, Math.max(0, 100 - startRef.current.width)),
+        y: clamp(startRef.current.y + dy, 0, Math.max(0, 100 - startRef.current.height)),
+      };
       frameRef.current = next;
       setFrame(next);
     },
     onPanResponderRelease: () => onMove(frameRef.current.x, frameRef.current.y),
     onPanResponderTerminate: () => onMove(frameRef.current.x, frameRef.current.y),
-  }), [canvasSize.height, canvasSize.width, onMove, onPress]);
+  }), [canvasSize.height, canvasSize.width, onMove, onPress, zoomScale]);
 
   const resizeResponder = useMemo(() => PanResponder.create({
     onStartShouldSetPanResponder: () => true,
@@ -974,28 +1101,61 @@ function DesignBlock({ item, selected, canvasSize, onPress, onMove, onResize }: 
     onPanResponderGrant: beginGesture,
     onPanResponderTerminationRequest: () => false,
     onPanResponderMove: (_, gesture) => {
-      const averageSize = Math.max((canvasSize.width + canvasSize.height) / 2, 1);
-      const drag = Math.abs(gesture.dx) > Math.abs(gesture.dy) ? gesture.dx : gesture.dy;
-      const scale = clamp(1 + (drag / averageSize) * 0.62, 0.25, 3);
-      const nextWidth = clamp(startRef.current.width * scale, 7, 95);
-      const nextHeight = clamp(startRef.current.height * scale, 5, 92);
+      const effectiveZoom = Math.max(zoomScale || 1, 0.5);
+      const dxPct = canvasSize.width > 0 ? ((gesture.dx / effectiveZoom) / canvasSize.width) * 100 : 0;
+      const dyPct = canvasSize.height > 0 ? ((gesture.dy / effectiveZoom) / canvasSize.height) * 100 : 0;
+      const pointerX = canvasFrame.width > 0 ? ((gesture.moveX - canvasFrame.x) / canvasFrame.width) * 100 : startRef.current.x + startRef.current.width + dxPct;
+      const pointerY = canvasFrame.height > 0 ? ((gesture.moveY - canvasFrame.y) / canvasFrame.height) * 100 : startRef.current.y + startRef.current.height + dyPct;
+      const absDx = Math.abs(dxPct);
+      const absDy = Math.abs(dyPct);
+      const rawWidth = clamp(pointerX - startRef.current.x, 7, Math.max(7, 100 - startRef.current.x));
+      const rawHeight = clamp(pointerY - startRef.current.y, 5, Math.max(5, 100 - startRef.current.y));
+      const widthDelta = rawWidth - startRef.current.width;
+      const heightDelta = rawHeight - startRef.current.height;
+      const horizontalOnly = absDx > absDy * 1.85;
+      const verticalOnly = absDy > absDx * 1.85;
+      const maxWidth = Math.max(7, 100 - startRef.current.x);
+      const maxHeight = Math.max(5, 100 - startRef.current.y);
+
+      let nextWidth = startRef.current.width;
+      let nextHeight = startRef.current.height;
+      let nextFontSize = startRef.current.fontSize;
+
+      if (horizontalOnly) {
+        nextWidth = clamp(rawWidth, 7, maxWidth);
+      } else if (verticalOnly) {
+        nextHeight = clamp(rawHeight, 5, maxHeight);
+      } else {
+        const widthScale = startRef.current.width > 0 ? rawWidth / startRef.current.width : 1;
+        const heightScale = startRef.current.height > 0 ? rawHeight / startRef.current.height : 1;
+        const targetScale = (widthScale + heightScale) / 2;
+        const constrainedScale = Math.min(targetScale, maxHeight / Math.max(startRef.current.height, 0.001));
+        nextWidth = clamp(startRef.current.width * constrainedScale, 7, maxWidth);
+        nextHeight = clamp(startRef.current.height * constrainedScale, 5, maxHeight);
+        nextFontSize = clamp(
+          Math.round(startRef.current.fontSize * (1 + (constrainedScale - 1) * 0.45)),
+          8,
+          72
+        );
+      }
+
       const next = {
         ...frameRef.current,
         width: nextWidth,
         height: nextHeight,
-        fontSize: clamp(Math.round(startRef.current.fontSize * scale), 8, 72),
+        fontSize: nextFontSize,
       };
       frameRef.current = next;
       setFrame(next);
     },
     onPanResponderRelease: () => onResize(frameRef.current.width, frameRef.current.height, frameRef.current.fontSize),
     onPanResponderTerminate: () => onResize(frameRef.current.width, frameRef.current.height, frameRef.current.fontSize),
-  }), [canvasSize.height, canvasSize.width, onPress, onResize]);
+  }), [canvasFrame.height, canvasFrame.width, canvasFrame.x, canvasFrame.y, canvasSize.height, canvasSize.width, onPress, onResize, zoomScale]);
 
-  const blockStyle = { left: `${frame.x}%`, top: `${frame.y}%`, width: `${frame.width}%`, height: `${frame.height}%`, backgroundColor: isTextOnly || item.shapeKind ? "transparent" : item.backgroundColor, borderRadius: item.radius, borderColor: item.borderColor ?? "rgba(15,23,42,0.14)", borderWidth: item.shapeKind ? 0 : item.borderWidth ?? (item.type === "image" ? 1 : 0), borderStyle: item.borderStyle ?? "solid", opacity: item.opacity ?? 1, overflow: selected || item.shadow || item.shapeKind ? "visible" : "hidden", transform: [{ rotate: `${item.rotation ?? 0}deg` }] } as const;
+  const blockStyle = { left: `${frame.x}%`, top: `${frame.y}%`, width: `${frame.width}%`, height: `${frame.height}%`, backgroundColor: isTextOnly || item.shapeKind ? "transparent" : item.backgroundColor, borderRadius: item.radius, borderColor: item.borderColor ?? "rgba(15,23,42,0.14)", borderWidth: item.shapeKind ? 0 : item.borderWidth ?? (item.type === "image" ? 1 : 0), borderStyle: item.borderStyle ?? "solid", opacity: item.opacity ?? 1, overflow: isTextOnly || selected || item.shadow || item.shapeKind ? "visible" : "hidden", transform: [{ rotate: `${item.rotation ?? 0}deg` }] } as const;
   const shadowStyle = item.shadow ? { shadowColor: item.shadowColor ?? "#000", shadowOpacity: 0.20, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 6 } : null;
   const motion = animationFor(item.animation);
-  return <MotiView from={motion.from} animate={motion.animate} transition={motion.transition} style={[styles.designBlock, item.type === "image" || item.shapeKind ? styles.designBlockFlush : null, blockStyle, shadowStyle]} {...dragResponder.panHandlers}>{item.shapeKind ? <DrawnShape item={item} /> : null}{item.type === "image" && item.imageUri ? <RNImage source={{ uri: item.imageUri }} blurRadius={item.blurRadius ?? 0} style={[styles.designImage, { borderRadius: item.radius }]} resizeMode={item.imageFit ?? "cover"} /> : null}{item.type === "image" && item.imageFilter && item.imageFilter !== "none" ? <View pointerEvents="none" style={[styles.designImageFilter, { backgroundColor: imageFilterColor(item.imageFilter) }]} /> : null}{item.type === "image" && !item.imageUri ? <Image size={18} color={item.color} /> : null}{!item.shapeKind && item.text ? <Text style={[styles.designText, { color: item.color, fontSize: frame.fontSize, lineHeight: item.lineHeight ?? Math.round(frame.fontSize * 1.18), textAlign: item.textAlign ?? (item.type === "button" || item.type === "badge" ? "center" : "left"), fontWeight: item.fontWeight ?? "900", fontFamily: item.fontFamily, fontStyle: item.fontStyle ?? "normal", textShadowColor: item.textEffect && item.textEffect !== "none" ? item.shadowColor ?? item.color : "transparent", textShadowRadius: item.textEffect === "glow" ? 8 : item.textEffect === "shadow" || item.textEffect === "lift" || item.textEffect === "outline" ? 3 : 0, textShadowOffset: item.textEffect === "shadow" || item.textEffect === "lift" ? { width: 2, height: 2 } : { width: 0, height: 0 }, letterSpacing: item.letterSpacing ?? 0, textDecorationLine: item.textDecorationLine ?? "none", textTransform: item.textTransform ?? "none" }]} numberOfLines={6}>{item.text}</Text> : null}{selected ? <View pointerEvents="none" style={styles.selectedFrame} /> : null}{selected ? <View style={styles.resizeHandle} {...resizeResponder.panHandlers}><Maximize2 size={12} color="#fff" /></View> : null}</MotiView>;
+  return <MotiView from={motion.from} animate={motion.animate} transition={motion.transition} style={[styles.designBlock, isTextOnly ? styles.designBlockText : null, item.type === "image" || item.shapeKind ? styles.designBlockFlush : null, blockStyle, shadowStyle]} {...dragResponder.panHandlers}>{item.shapeKind ? <DrawnShape item={item} /> : null}{item.type === "image" && item.imageUri ? <RNImage source={{ uri: item.imageUri }} blurRadius={item.blurRadius ?? 0} style={[styles.designImage, { borderRadius: item.radius }]} resizeMode={item.imageFit ?? "cover"} /> : null}{item.type === "image" && item.imageFilter && item.imageFilter !== "none" ? <View pointerEvents="none" style={[styles.designImageFilter, { backgroundColor: imageFilterColor(item.imageFilter) }]} /> : null}{item.type === "image" && !item.imageUri ? <Image size={18} color={item.color} /> : null}{!item.shapeKind && item.text ? <Text style={[styles.designText, isTextOnly ? styles.designTextBlock : null, { color: item.color, fontSize: frame.fontSize, lineHeight: item.lineHeight ?? Math.round(frame.fontSize * 1.18), textAlign: item.textAlign ?? (item.type === "button" || item.type === "badge" ? "center" : "left"), fontWeight: item.fontWeight ?? "900", fontFamily: item.fontFamily, fontStyle: item.fontStyle ?? "normal", textShadowColor: item.textEffect && item.textEffect !== "none" ? item.shadowColor ?? item.color : "transparent", textShadowRadius: item.textEffect === "glow" ? 8 : item.textEffect === "shadow" || item.textEffect === "lift" || item.textEffect === "outline" ? 3 : 0, textShadowOffset: item.textEffect === "shadow" || item.textEffect === "lift" ? { width: 2, height: 2 } : { width: 0, height: 0 }, letterSpacing: item.letterSpacing ?? 0, textDecorationLine: item.textDecorationLine ?? "none", textTransform: item.textTransform ?? "none" }]}>{item.text}</Text> : null}{selected ? <View pointerEvents="none" style={styles.selectedFrame} /> : null}{selected ? <View style={styles.resizeHandle} {...resizeResponder.panHandlers}><Maximize2 size={12} color="#fff" /></View> : null}</MotiView>;
 }
 function PinchZoomStage({ zoom, landscape, onZoom, onPress, children }: { zoom: number; landscape?: boolean; onZoom: (value: number) => void; onPress: () => void; children: React.ReactNode }) {
   const distanceRef = useRef<number | null>(null);
@@ -1115,11 +1275,12 @@ function CanvaElementPreview({ preview, index }: { preview: string; index: numbe
   if (preview === "quote") return <View style={styles.elementPreviewBox}><View style={styles.previewQuoteCard}><View style={styles.previewQuoteMark} /><View style={styles.previewQuoteLine} /><View style={[styles.previewQuoteLine, { width: 30 }]} /></View></View>;
   if (preview === "checklist") return <View style={styles.elementPreviewBox}><View style={styles.previewChecklist}>{[0, 1, 2].map((item) => <View key={item} style={styles.previewChecklistRow}><View style={styles.previewChecklistDot} /><View style={styles.previewChecklistLine} /></View>)}</View></View>;
   if (preview === "progress") return <View style={styles.elementPreviewBox}><View style={styles.previewProgressTrack}><View style={styles.previewProgressFill} /></View></View>;
-  if (preview === "phone") return <View style={styles.elementPreviewBox}><View style={styles.previewPhone}><View style={styles.previewPhoneLine} /></View></View>;
+  if (preview === "brand-logo") return <View style={styles.elementPreviewBox}><View style={[styles.previewTextShell, { paddingHorizontal: 10 }]}><Text style={styles.previewHeadingActual}>Brand name</Text></View></View>;
+  if (preview === "brand-mono") return <View style={styles.elementPreviewBox}><View style={[styles.previewCircle, { backgroundColor: "#111827", alignItems: "center", justifyContent: "center" }]}><Text style={{ color: "#FFFFFF", fontSize: 18, fontWeight: "900" }}>B</Text></View></View>;
+  if (preview === "brand-gold") return <View style={styles.elementPreviewBox}><View style={{ width: "72%", height: 14, borderRadius: 999, backgroundColor: "#DFAE55" }} /></View>;
+  if (preview.startsWith("brand")) return <View style={styles.elementPreviewBox}><LinearGradient colors={(preview.includes("green") ? ["#183B35", "#01A06D"] : ["#4D2FB2", "#A855F7"]) as any} style={styles.previewBrandCard}><View style={[styles.previewLabelPill, { width: 44, height: 18, backgroundColor: "rgba(255,255,255,0.9)" }]}><Text style={[styles.previewLabelText, { color: preview.includes("green") ? "#183B35" : "#4D2FB2" }]}>BRAND</Text></View><View style={styles.previewBrandLines}><View style={styles.previewBrandLineWide} /><View style={styles.previewBrandLine} /></View></LinearGradient></View>;
   if (preview === "browser") return <View style={styles.elementPreviewBox}><View style={styles.previewBrowser}><View style={styles.previewBrowserTop} /><View style={styles.previewBrowserBody} /></View></View>;
   if (preview === "qr") return <View style={styles.elementPreviewBox}><View style={styles.previewQr}>{Array.from({ length: 9 }).map((_, cell) => <View key={cell} style={[styles.previewQrCell, cell % 2 ? { opacity: 0.25 } : null]} />)}</View></View>;
-  if (preview.startsWith("brand")) return <View style={styles.elementPreviewBox}><LinearGradient colors={(preview.includes("green") ? ["#183B35", "#01A06D"] : preview.includes("gold") ? ["#DFAE55", "#FEF3C7"] : preview.includes("mono") ? ["#111827", "#475569"] : ["#4D2FB2", "#A855F7"]) as any} style={styles.previewBrandCard}><View style={styles.previewBrandDot} /><View style={styles.previewBrandLines}><View style={styles.previewBrandLineWide} /><View style={styles.previewBrandLine} /></View></LinearGradient></View>;
-  if (preview.startsWith("photo") || preview === "fabric" || preview === "paper" || preview === "water" || preview === "lavender") return <View style={styles.elementPreviewBox}><LinearGradient colors={(preview === "photo-code" ? ["#111827", "#0EA5E9"] : preview === "photo-warm" || preview === "fabric" ? ["#FED7AA", "#F97316"] : preview === "photo-flower" ? ["#DCFCE7", "#F9A8D4"] : preview === "paper" ? ["#F8FAFC", "#E2E8F0"] : preview === "water" ? ["#BFDBFE", "#38BDF8"] : preview === "lavender" ? ["#DDD6FE", "#A78BFA"] : ["#DBEAFE", "#34D399"]) as any} style={styles.previewPhotoCard}><View style={styles.previewPhotoGlow} /><View style={styles.previewPhotoLine} /><View style={styles.previewPhotoLineShort} /></LinearGradient></View>;
   if (preview.startsWith("bg-") || preview === "gradient") return <View style={styles.elementPreviewBox}><LinearGradient colors={(preview === "bg-black" ? ["#020617", "#334155"] : preview === "bg-purple" ? ["#4D2FB2", "#A855F7"] : preview === "bg-teal" ? ["#183B35", "#14B8A6"] : preview === "bg-sunset" ? ["#F97316", "#FACC15"] : preview === "gradient" ? ["#EEF2FF", "#CCFBF1"] : ["#FFFFFF", "#E2E8F0"]) as any} style={styles.previewBackgroundCard} /></View>;
   if (preview.startsWith("upload")) return <View style={styles.elementPreviewBox}><LinearGradient colors={["#E0F2FE", "#F5D0FE"] as const} style={styles.previewUploadCard}><View style={styles.previewUploadPlus} /></LinearGradient></View>;
   if (preview === "project") return <View style={styles.elementPreviewBox}><View style={styles.previewProjectCard}><View style={styles.previewProjectGrid}>{Array.from({ length: 4 }).map((_, cell) => <View key={cell} style={styles.previewProjectCell} />)}</View></View></View>;
@@ -1523,11 +1684,11 @@ function getPanelRows(activePanel: Exclude<EditorPanel, null>, t: ReturnType<typ
     { title: "CTA copy", body: "Button text block", preview: "cta", icon: MousePointer2, action: () => onAddElement("button") },
   ];
   if (activePanel === "brand") return [
-    { title: "Primary logo", body: "", preview: "brand-logo", icon: BadgePlus, action: () => onAddPreset("text", { text: "Brand name", width: 48, height: 9, fontSize: 20, fontWeight: "900", color: "#111827" }) },
-    { title: "Purple badge", body: "", preview: "brand-purple", icon: BadgePlus, action: () => onAddPreset("badge", { text: "BRAND", width: 34, backgroundColor: "#4D2FB2", color: "#FFFFFF" }) },
-    { title: "Green badge", body: "", preview: "brand-green", icon: BadgePlus, action: () => onAddPreset("badge", { text: "BRAND", width: 34, backgroundColor: "#183B35", color: "#FFFFFF" }) },
-    { title: "Gold accent", body: "", preview: "brand-gold", icon: BadgePlus, action: () => onAddPreset("shape", { width: 34, height: 12, radius: 999, backgroundColor: "#DFAE55" }) },
-    { title: "Monogram", body: "", preview: "brand-mono", icon: BadgePlus, action: () => onAddPreset("badge", { text: "B", width: 16, height: 16, radius: 999, backgroundColor: "#111827", color: "#FFFFFF", fontSize: 18 }) },
+    { title: "Primary logo", body: "", preview: "brand-logo", icon: BadgePlus, action: () => onAddPreset("text", { text: "Brand name", width: 54, height: 14, fontSize: 22, fontWeight: "900", color: "#111827", lineHeight: 24 }) },
+    { title: "Purple badge", body: "", preview: "brand-purple", icon: BadgePlus, action: () => onAddPreset("badge", { text: "BRAND", width: 40, height: 10, fontSize: 14, backgroundColor: "#4D2FB2", color: "#FFFFFF" }) },
+    { title: "Green badge", body: "", preview: "brand-green", icon: BadgePlus, action: () => onAddPreset("badge", { text: "BRAND", width: 40, height: 10, fontSize: 14, backgroundColor: "#183B35", color: "#FFFFFF" }) },
+    { title: "Gold accent", body: "", preview: "brand-gold", icon: BadgePlus, action: () => onAddPreset("shape", { width: 40, height: 14, radius: 999, backgroundColor: "#DFAE55" }) },
+    { title: "Monogram", body: "", preview: "brand-mono", icon: BadgePlus, action: () => onAddPreset("badge", { text: "B", width: 18, height: 18, radius: 999, backgroundColor: "#111827", color: "#FFFFFF", fontSize: 16, lineHeight: 18 }) },
     { title: "Brand strip", body: "", preview: "line", icon: Square, action: () => onAddPreset("shape", { width: 64, height: 3, radius: 999, backgroundColor: "#4D2FB2" }) },
   ];
   if (activePanel === "uploads") return [
@@ -1562,7 +1723,6 @@ function getPanelRows(activePanel: Exclude<EditorPanel, null>, t: ReturnType<typ
     { title: "Pencil", body: "Draw a soft dashed sketch stroke", preview: "dash", icon: Pencil, action: () => onSetDrawingTool("pencil") },
     { title: "Marker", body: "Draw a thick translucent highlight", preview: "brand-gold", icon: Brush, action: () => onSetDrawingTool("marker") },
     { title: "Stop drawing", body: "Return to selecting and moving elements", preview: "caption-footer", icon: MousePointer2, action: () => onSetDrawingTool(null) },
-    { title: "Table block", body: "Simple table placeholder", preview: "table", icon: Table2, action: () => onAddPreset("shape", { text: "", width: 72, height: 24, radius: 10, backgroundColor: "#F8FAFC", borderColor: "#CBD5E1", shapeKind: "table" }) },
   ];  return [{ title: t.addPage, body: "Create a new page", icon: Plus, action: onAddPage }, ...pages.map((page, index) => ({ title: `${index + 1}. ${page.title}`, body: page.format, icon: Presentation, action: () => onSelectPage(page) }))];
 }
 function DockButton({ label, icon: Icon, onPress, palette, danger }: { label: string; icon: React.ComponentType<{ size?: number; color?: string; strokeWidth?: number }>; onPress: () => void; palette: ReturnType<typeof getPalette>; danger?: boolean }) {
@@ -1629,7 +1789,7 @@ const styles = StyleSheet.create({
   sheetRow: { minHeight: 64, borderRadius: 18, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10, flexDirection: "row", alignItems: "center", gap: 12 },
   sheetVisualRow: { minHeight: 92, alignItems: "stretch" },
   previewGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10, paddingBottom: 14 },
-  previewTile: { width: "30.5%", minHeight: 98, borderRadius: 18, borderWidth: 1, alignItems: "center", justifyContent: "center", padding: 5, overflow: "hidden" },
+  previewTile: { width: "30.8%", aspectRatio: 1, borderRadius: 18, borderWidth: 1, alignItems: "center", justifyContent: "center", padding: 5, overflow: "hidden" },
   templatePreviewCanvas: { width: "100%", minHeight: 78, borderRadius: 12, overflow: "hidden", position: "relative", borderWidth: 1, borderColor: "rgba(15,23,42,0.10)" },
   templateHeroBlock: { position: "absolute", left: 7, top: 8, width: 34, height: 38, borderRadius: 8 },
   templateAccentBar: { position: "absolute", left: 8, right: 8, height: 6, borderRadius: 999 },
@@ -1659,9 +1819,9 @@ const styles = StyleSheet.create({
   templatePreviewLineShort: { width: "52%", height: 4, borderRadius: 999 },
   templatePreviewSlides: { flexDirection: "row", gap: 4 },
   templateTinySlide: { width: 24, height: 14, borderRadius: 3, borderWidth: 1, borderColor: "rgba(15,23,42,0.10)" },
-  elementPreviewBox: { width: "100%", minHeight: 88, borderRadius: 14, backgroundColor: "#FFFFFF", alignItems: "center", justifyContent: "center", overflow: "hidden", paddingHorizontal: 0 },
+  elementPreviewBox: { width: "100%", aspectRatio: 1, borderRadius: 14, backgroundColor: "#FFFFFF", alignItems: "center", justifyContent: "center", overflow: "hidden", paddingHorizontal: 0 },
   previewRealImage: { ...StyleSheet.absoluteFillObject, width: "100%", height: "100%", borderRadius: 14 },
-  previewTextShell: { width: "100%", height: "100%", minHeight: 80, alignItems: "center", justifyContent: "center", paddingHorizontal: 7, alignSelf: "stretch" },
+  previewTextShell: { width: "100%", height: "100%", alignItems: "center", justifyContent: "center", paddingHorizontal: 8, alignSelf: "stretch" },
   previewSquare: { width: 42, height: 42, borderRadius: 2 },
   previewRounded: { width: 42, height: 42, borderRadius: 9, backgroundColor: "#000000" },
   previewArrowShape: { width: 58, height: 28, flexDirection: "row", alignItems: "center", justifyContent: "center" },
@@ -1762,6 +1922,13 @@ const styles = StyleSheet.create({
   animationPreview: { width: 42, height: 42, borderRadius: 16 },
   sheetRowText: { flex: 1, gap: 2 },
   sheetRowTitle: { fontSize: 14, fontWeight: "900" },
+  historyCard: { borderRadius: 18, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 12, gap: 10 },
+  historyCardHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
+  historyMeta: { flex: 1, gap: 3 },
+  historyTitle: { fontSize: 14, fontWeight: "900" },
+  historyBody: { fontSize: 12, lineHeight: 16, fontWeight: "700" },
+  historyRestoreButton: { minWidth: 88, minHeight: 36, borderRadius: 12, paddingHorizontal: 12, alignItems: "center", justifyContent: "center", backgroundColor: "#4D2FB2" },
+  historyRestoreText: { color: "#FFFFFF", fontSize: 12, fontWeight: "900" },
   sheetRowBody: { fontSize: 12, lineHeight: 16, fontWeight: "600" },  chooserContent: { paddingHorizontal: 18, paddingTop: 8, paddingBottom: 120, gap: 16 },
   continueButton: { minHeight: 42, borderRadius: 14, paddingHorizontal: 14, alignItems: "center", justifyContent: "center" },
   continueText: { color: "#FFFFFF", fontSize: 13, fontWeight: "900" },
@@ -1798,18 +1965,20 @@ const styles = StyleSheet.create({
   dockButton: { width: 72, minHeight: 54, borderRadius: 16, borderWidth: 1, alignItems: "center", justifyContent: "center", gap: 4, paddingHorizontal: 6 },
   dockButtonText: { fontSize: 10, fontWeight: "900", textAlign: "center" },
   designBlock: { position: "absolute", paddingHorizontal: 8, paddingVertical: 6, alignItems: "center", justifyContent: "center", gap: 4 },
+  designBlockText: { alignItems: "flex-start", justifyContent: "flex-start", paddingHorizontal: 0, paddingVertical: 0, minHeight: 0 },
   designBlockFlush: { paddingHorizontal: 0, paddingVertical: 0, gap: 0 },
-  designText: { width: "100%", fontWeight: "900" },
+  designText: { width: "100%", fontWeight: "900", includeFontPadding: false },
+  designTextBlock: { flexShrink: 1, paddingVertical: 0, includeFontPadding: false, minHeight: 0 },
   designImage: { ...StyleSheet.absoluteFillObject, width: "100%", height: "100%" },
   designImageFilter: { ...StyleSheet.absoluteFillObject },
   drawnCenter: { flex: 1, alignItems: "center", justifyContent: "center", width: "100%", height: "100%" },
-  drawnTriangle: { width: 0, height: 0, borderLeftWidth: 42, borderRightWidth: 42, borderBottomWidth: 72, borderLeftColor: "transparent", borderRightColor: "transparent" },
-  drawnPentagon: { width: "70%", height: "64%", borderRadius: 9, alignSelf: "center", marginTop: "14%" },
-  drawnPentagonTop: { position: "absolute", top: -18, left: "24%", width: "52%", aspectRatio: 1, transform: [{ rotate: "45deg" }], borderRadius: 5 },
-  drawnSpark: { width: "58%", aspectRatio: 1, borderRadius: 13 },
-  drawnArrow: { width: "86%", height: "70%", flexDirection: "row", alignItems: "center", justifyContent: "center" },
-  drawnArrowShaft: { width: "66%", height: "28%", borderRadius: 999 },
-  drawnArrowHead: { width: 0, height: 0, borderTopWidth: 18, borderBottomWidth: 18, borderLeftWidth: 26, borderTopColor: "transparent", borderBottomColor: "transparent" },
+  drawnTriangle: { width: 0, height: 0, borderLeftWidth: 34, borderRightWidth: 34, borderBottomWidth: 62, borderLeftColor: "transparent", borderRightColor: "transparent" },
+  drawnPentagon: { width: "84%", height: "78%", borderRadius: 9, alignSelf: "center", marginTop: "10%" },
+  drawnPentagonTop: { position: "absolute", top: -14, left: "22%", width: "56%", aspectRatio: 1, transform: [{ rotate: "45deg" }], borderRadius: 5 },
+  drawnSpark: { width: "74%", aspectRatio: 1, borderRadius: 13 },
+  drawnArrow: { width: "100%", height: "100%", flexDirection: "row", alignItems: "center", justifyContent: "center" },
+  drawnArrowShaft: { width: "72%", height: "24%", borderRadius: 999 },
+  drawnArrowHead: { width: 0, height: 0, borderTopWidth: 14, borderBottomWidth: 14, borderLeftWidth: 24, borderTopColor: "transparent", borderBottomColor: "transparent" },
   drawnLine: { width: "90%", height: 4, borderRadius: 999 },
   drawnDashRow: { width: "90%", flexDirection: "row", gap: 8, alignItems: "center", justifyContent: "center" },
   drawnDash: { flex: 1, height: 4, borderRadius: 999 },
@@ -1818,24 +1987,24 @@ const styles = StyleSheet.create({
   drawnFlowLine: { width: "15%", height: 3, borderRadius: 999 },
   drawnTable: { width: "100%", height: "100%", borderWidth: 1, flexDirection: "row", flexWrap: "wrap", overflow: "hidden", borderRadius: 10 },
   drawnTableCell: { width: "33.33%", height: "50%", borderRightWidth: 1, borderBottomWidth: 1 },
-  drawnStat: { flex: 1, borderRadius: 14, backgroundColor: "#DBEAFE", padding: 10, justifyContent: "space-between" },
+  drawnStat: { width: "100%", height: "100%", borderRadius: 14, backgroundColor: "#DBEAFE", padding: 8, justifyContent: "space-between" },
   drawnStatNumber: { width: "52%", height: 13, borderRadius: 999 },
   drawnStatLine: { width: "78%", height: 7, borderRadius: 999, backgroundColor: "rgba(15,23,42,0.18)" },
-  drawnProgressTrack: { width: "92%", height: "58%", borderRadius: 999, backgroundColor: "#E2E8F0", overflow: "hidden" },
+  drawnProgressTrack: { width: "100%", height: "100%", borderRadius: 999, backgroundColor: "#E2E8F0", overflow: "hidden" },
   drawnProgressFill: { width: "68%", height: "100%", borderRadius: 999 },
-  drawnBrowser: { flex: 1, borderWidth: 1, borderRadius: 14, overflow: "hidden", backgroundColor: "#F8FAFC" },
+  drawnBrowser: { width: "100%", height: "100%", borderWidth: 1, borderRadius: 14, overflow: "hidden", backgroundColor: "#F8FAFC" },
   drawnBrowserTop: { height: "20%", backgroundColor: "#E2E8F0" },
-  drawnBrowserBody: { flex: 1, margin: 8, borderRadius: 9, backgroundColor: "#DBEAFE" },
+  drawnBrowserBody: { flex: 1, margin: 5, borderRadius: 9, backgroundColor: "#DBEAFE" },
   drawnQr: { width: "100%", height: "100%", flexDirection: "row", flexWrap: "wrap", backgroundColor: "#FFFFFF" },
   drawnQrCell: { width: "25%", height: "25%", borderWidth: 1, borderColor: "#FFFFFF" },
   drawnPhone: { flex: 1, borderRadius: 24, alignItems: "center", justifyContent: "center", padding: 10 },
   drawnPhoneLine: { width: "46%", height: 5, borderRadius: 999, backgroundColor: "rgba(255,255,255,0.36)" },
   drawnChart: { flex: 1, flexDirection: "row", alignItems: "flex-end", justifyContent: "center", gap: 8, padding: 10, borderLeftWidth: 3, borderBottomWidth: 3, borderColor: "rgba(15,23,42,0.25)" },
   drawnChartBar: { width: 11, borderRadius: 999 },
-  drawnQuote: { flex: 1, borderRadius: 14, backgroundColor: "#F8FAFC", borderWidth: 1, borderColor: "#CBD5E1", padding: 10, gap: 7, justifyContent: "center" },
+  drawnQuote: { width: "100%", height: "100%", borderRadius: 14, backgroundColor: "#F8FAFC", borderWidth: 1, borderColor: "#CBD5E1", padding: 8, gap: 6, justifyContent: "center" },
   drawnQuoteDot: { width: 16, height: 16, borderRadius: 8 },
   drawnQuoteLine: { width: "78%", height: 6, borderRadius: 999, backgroundColor: "rgba(15,23,42,0.18)" },
-  drawnChecklist: { flex: 1, justifyContent: "center", gap: 7, padding: 9 },
+  drawnChecklist: { width: "100%", height: "100%", justifyContent: "center", gap: 6, padding: 6 },
   drawnChecklistRow: { flexDirection: "row", alignItems: "center", gap: 7 },
   drawnChecklistDot: { width: 11, height: 11, borderRadius: 6 },
   drawnChecklistLine: { flex: 1, height: 6, borderRadius: 999, backgroundColor: "rgba(15,23,42,0.18)" },
@@ -1843,8 +2012,8 @@ const styles = StyleSheet.create({
   drawnMusicIcon: { flex: 1, width: "100%", height: "100%", position: "relative" },
   drawnMusicStem: { position: "absolute", right: "24%", top: "8%", width: "13%", height: "68%", borderRadius: 999 },
   drawnMusicNote: { position: "absolute", left: "12%", bottom: "8%", width: "50%", height: "34%", borderRadius: 999 },
-  drawnPlayTriangle: { width: 0, height: 0, borderTopWidth: 18, borderBottomWidth: 18, borderLeftWidth: 28, borderTopColor: "transparent", borderBottomColor: "transparent", borderLeftColor: "#FFFFFF" },
-  drawnForm: { flex: 1, borderRadius: 14, backgroundColor: "#F8FAFC", borderWidth: 1, borderColor: "#CBD5E1", padding: 10, gap: 6 },
+  drawnPlayTriangle: { width: 0, height: 0, borderTopWidth: 12, borderBottomWidth: 12, borderLeftWidth: 20, borderTopColor: "transparent", borderBottomColor: "transparent", borderLeftColor: "#FFFFFF" },
+  drawnForm: { width: "100%", height: "100%", borderRadius: 14, backgroundColor: "#F8FAFC", borderWidth: 1, borderColor: "#CBD5E1", padding: 8, gap: 5 },
   drawnFormLine: { height: 7, borderRadius: 999, backgroundColor: "rgba(15,23,42,0.16)" },
   drawnFormButton: { width: "44%", height: 10, borderRadius: 999, alignSelf: "flex-end" },
   drawnFile: { flex: 1, borderRadius: 12, backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#CBD5E1", padding: 10, justifyContent: "flex-end", gap: 6, overflow: "hidden" },
@@ -1889,6 +2058,12 @@ const styles = StyleSheet.create({
   emptyTitle: { fontSize: 24, fontWeight: "900", textAlign: "center" },
   emptyBody: { marginTop: 8, textAlign: "center", fontSize: 14, lineHeight: 22 },
 });
+
+
+
+
+
+
 
 
 

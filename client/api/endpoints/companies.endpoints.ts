@@ -29,7 +29,7 @@ export const businessPlanEndpoints = {
    addFinancialData: (id: string, financialData: CompanyFinancialDataDto) =>
       axiosClient.put(`/company/${id}/financial-data`, financialData),
 
-   generateBusinessPlan: (id: string, options?: { sections?: string[]; overwrite?: boolean }) =>
+   generateBusinessPlan: (id: string, options?: { sections?: string[]; overwrite?: boolean; language?: 'en' | 'ru' | 'hy' }) =>
       axiosClient.post(`/company/${id}/generate-business-plan`, options || {}),
 
    search: (searchTerm: string) =>

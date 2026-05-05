@@ -1,5 +1,17 @@
 import { BusinessPlanTemplate } from './business-plan.types';
 
+export type SupportedPlanLanguage = 'en' | 'ru' | 'hy';
+
+export type BusinessPlanGenerationState = 'idle' | 'generating' | 'ready' | 'failed';
+
+export type BusinessPlanGenerationStatus = {
+   status: BusinessPlanGenerationState;
+   language?: SupportedPlanLanguage;
+   startedAt?: string;
+   finishedAt?: string;
+   error?: string | null;
+};
+
 export type Company = {
    id: string;
    userId: string;
@@ -44,7 +56,10 @@ export type CompanyFinancialDataDto = {
 }
 
 export type CompanyAdditionalDataDto = {
-   business_plan: BusinessPlanTemplate
+   business_plan?: BusinessPlanTemplate;
+   business_plan_translations?: Partial<Record<SupportedPlanLanguage, BusinessPlanTemplate>>;
+   business_plan_generation?: BusinessPlanGenerationStatus;
+   [key: string]: any;
 }
 
 export type ApiResponse<T = any> = {

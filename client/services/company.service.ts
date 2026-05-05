@@ -71,7 +71,7 @@ class CompanyService {
       return response.data!;
    }
 
-   async generateBusinessPlan(id: string, options?: { sections?: string[]; overwrite?: boolean }): Promise<AdditionalDataResponse> {
+   async generateBusinessPlan(id: string, options?: { sections?: string[]; overwrite?: boolean; language?: 'en' | 'ru' | 'hy' }): Promise<AdditionalDataResponse> {
       const response: ApiResponse<AdditionalDataResponse> = await businessPlanEndpoints.generateBusinessPlan(id, options);
       if (!response.success) {
          throw new Error(response.error || response.message || 'Failed to generate business plan');

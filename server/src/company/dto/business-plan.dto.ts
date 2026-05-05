@@ -67,4 +67,8 @@ export class GenerateBusinessPlanDto {
    @IsOptional()
    @IsBoolean()
    overwrite?: boolean;
+
+   @IsOptional()
+   @IsString()
+   language?: 'en' | 'ru' | 'hy';
 }

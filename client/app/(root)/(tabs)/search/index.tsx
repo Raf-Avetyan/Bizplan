@@ -43,6 +43,14 @@ type CachedCompanyNews = {
 };
 
 type ArticleSnippetMap = Record<string, string>;
+type NewsArticleCard = {
+  url: string;
+  title: string;
+  domain: string;
+  snippet: string;
+  imageUrl: string;
+  theme: string;
+};
 
 export default function SearchIndex() {
   const toast = useToast();
@@ -79,6 +87,10 @@ export default function SearchIndex() {
   const companyArticles = useMemo(
     () => (companyNews ? buildArticleCards(companyNews, articleSnippets, t.openSourceForFullArticle) : []),
     [articleSnippets, companyNews, t.openSourceForFullArticle],
+  );
+  const webArticles = useMemo(
+    () => (webResult ? buildArticleCards(webResult, articleSnippets, t.openSourceForFullArticle) : []),
+    [articleSnippets, t.openSourceForFullArticle, webResult],
   );
 
   useEffect(() => {
@@ -344,12 +356,15 @@ export default function SearchIndex() {
                     style={[styles.articleCard, { borderColor: palette.border }]}
                   >
                   <View style={[styles.articleImageWrap, { backgroundColor: palette.imageBackground }]}>
-                    <Image source={{ uri: article.imageUrl }} style={styles.articleImage} />
+                    <Image source={{ uri: article.imageUrl }} style={styles.articleImage} resizeMode="cover" />
                   </View>
                   <View style={{ flex: 1 }}>
                     <View style={styles.articleTopRow}>
                       <Text style={[styles.articleDomain, { color: palette.eyebrow }]}>{article.domain}</Text>
                       <ExternalLink size={14} color={palette.muted} />
+                    </View>
+                    <View style={[styles.themeBadge, { backgroundColor: palette.chip, borderColor: palette.border }]}>
+                      <Text style={[styles.themeBadgeText, { color: palette.text }]}>{article.theme}</Text>
                     </View>
                     <Text style={[styles.articleTitle, { color: palette.text }]}>{article.title}</Text>
                     <Text style={[styles.articleSnippet, { color: palette.muted }]}>{article.snippet}</Text>
@@ -392,6 +407,28 @@ export default function SearchIndex() {
               <View style={[styles.browserCard, { backgroundColor: palette.input, borderColor: palette.border }]}>
                 <Text style={[styles.browserEyebrow, { color: palette.eyebrow }]}>{t.browserResult}</Text>
                 <Text style={[styles.browserQuery, { color: palette.text }]}>{webQuery}</Text>
+
+                {webArticles.length > 0 ? (
+                  <View style={styles.sourcesList}>
+                    {webArticles.map((article, index) => (
+                      <TouchableOpacity
+                        key={`${article.url}-${index}`}
+                        style={[styles.sourceArticleCard, { backgroundColor: palette.card, borderColor: palette.border }]}
+                        onPress={() => void Linking.openURL(article.url)}
+                      >
+                        <Image source={{ uri: article.imageUrl }} style={styles.sourceArticleImage} resizeMode="cover" />
+                        <View style={styles.sourceArticleBody}>
+                          <View style={styles.articleTopRow}>
+                            <Text style={[styles.articleDomain, { color: palette.eyebrow }]}>{article.domain}</Text>
+                            <Text style={[styles.sourceThemeText, { color: palette.muted }]}>{article.theme}</Text>
+                          </View>
+                          <Text style={[styles.sourceArticleTitle, { color: palette.text }]} numberOfLines={2}>{article.title}</Text>
+                          <Text style={[styles.sourceArticleSnippet, { color: palette.muted }]} numberOfLines={3}>{article.snippet}</Text>
+                        </View>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                ) : null}
 
                 <Text style={[styles.browserAnswer, { color: palette.muted }]}>{webResult.answer}</Text>
 
@@ -545,12 +582,13 @@ function buildArticleCards(
   result: WebSearchResult,
   articleSnippets: ArticleSnippetMap,
   fallbackSnippet: string,
-) {
+) : NewsArticleCard[] {
   return result.sources.slice(0, 9).map((source) => ({
     ...source,
     domain: getDomain(source.url),
-    imageUrl: getFaviconUrl(source.url),
+    imageUrl: getArticlePreviewUrl(source.url),
     snippet: articleSnippets[source.url] ?? fallbackSnippet,
+    theme: inferArticleTheme(source.title, articleSnippets[source.url] ?? fallbackSnippet),
   }));
 }
 
@@ -637,8 +675,19 @@ function getDomain(url: string) {
   }
 }
 
-function getFaviconUrl(url: string) {
-  return `https://www.google.com/s2/favicons?sz=128&domain_url=${encodeURIComponent(url)}`;
+function getArticlePreviewUrl(url: string) {
+  return `https://image.thum.io/get/width/900/crop/600/noanimate/${url}`;
+}
+
+function inferArticleTheme(title: string, snippet: string) {
+  const value = `${title} ${snippet}`.toLowerCase();
+  if (value.includes("fund") || value.includes("investment") || value.includes("raise")) return "Funding";
+  if (value.includes("compet") || value.includes("rival")) return "Competitor";
+  if (value.includes("regulat") || value.includes("law") || value.includes("policy")) return "Regulation";
+  if (value.includes("market") || value.includes("industry") || value.includes("trend")) return "Market";
+  if (value.includes("customer") || value.includes("consumer") || value.includes("audience")) return "Customer trend";
+  if (value.includes("armenia") || value.includes("local") || value.includes("community")) return "Local news";
+  return "Business update";
 }
 
 function getSearchCopy(language: "en" | "ru" | "hy") {
@@ -963,23 +1012,36 @@ const styles = StyleSheet.create({
     padding: 14,
   },
   articleImageWrap: {
-    width: 58,
-    height: 58,
-    borderRadius: 16,
+    width: 92,
+    height: 92,
+    borderRadius: 20,
     backgroundColor: "rgba(255,255,255,0.12)",
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
   },
   articleImage: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
+    width: "100%",
+    height: "100%",
   },
   articleTopRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+  },
+  themeBadge: {
+    alignSelf: "flex-start",
+    marginTop: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  themeBadgeText: {
+    fontSize: 10,
+    fontFamily: "REM-Bold",
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
   },
   articleDomain: {
     color: "rgba(255,255,255,0.5)",
@@ -1090,6 +1152,33 @@ const styles = StyleSheet.create({
   sourcesList: {
     marginTop: 10,
     gap: 10,
+  },
+  sourceArticleCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    overflow: "hidden",
+  },
+  sourceArticleImage: {
+    width: "100%",
+    height: 156,
+  },
+  sourceArticleBody: {
+    padding: 12,
+    gap: 6,
+  },
+  sourceArticleTitle: {
+    fontSize: 15,
+    lineHeight: 20,
+    fontFamily: "Gabarito",
+  },
+  sourceArticleSnippet: {
+    fontSize: 13,
+    lineHeight: 19,
+    fontFamily: "REM-Regular",
+  },
+  sourceThemeText: {
+    fontSize: 11,
+    fontFamily: "REM-Bold",
   },
   sourceCard: {
     borderRadius: 16,

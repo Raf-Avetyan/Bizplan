@@ -1,4 +1,4 @@
-import React, { forwardRef, useState } from 'react';
+﻿import React, { forwardRef, useState } from 'react';
 import {
    View,
    Text,
@@ -145,9 +145,9 @@ const scaleStyleObject = (style: any, factor: number) => {
 
 export const renderBlockContent = (block: PageBlock, key: number, contentScale: number = 1) => {
    const scaledBlockStyles = scaleStyleObject(block.styles, contentScale);
-   const compactHeadingStyle = contentScale < 1 ? { fontSize: Math.max(13, 24 * contentScale + 4), lineHeight: Math.max(18, 28 * contentScale + 8) } : null;
-   const compactTextStyle = contentScale < 1 ? { fontSize: Math.max(11, 14 * contentScale + 4), lineHeight: Math.max(16, 20 * contentScale + 8) } : null;
-   const compactListStyle = contentScale < 1 ? { fontSize: Math.max(11, 14 * contentScale + 4), lineHeight: Math.max(16, 20 * contentScale + 8) } : null;
+   const compactHeadingStyle = contentScale < 1 ? { fontSize: Math.max(8, 24 * contentScale + 4), lineHeight: Math.max(8, 28 * contentScale + 8) } : null;
+   const compactTextStyle = contentScale < 1 ? { fontSize: Math.max(5, 14 * contentScale + 4), lineHeight: Math.max(5, 20 * contentScale + 8) } : null;
+   const compactListStyle = contentScale < 1 ? { fontSize: Math.max(5, 14 * contentScale + 4), lineHeight: Math.max(5, 20 * contentScale + 8) } : null;
    const compactBlockSpacing = contentScale < 1 ? { marginBottom: 5, marginTop: 0, marginVertical: 2 } : null;
    const compactBulletStyle = contentScale < 1 ? { fontSize: Math.max(6, 16 * contentScale), marginRight: 3 } : null;
    const compactListItemStyle = contentScale < 1 ? { marginBottom: 1 } : null;
@@ -164,21 +164,53 @@ export const renderBlockContent = (block: PageBlock, key: number, contentScale: 
                {typeof block.content === 'string' ? block.content : 'Paragraph'}
             </Text>
          );
-      case 'list':
+      case 'list': {
          const items = Array.isArray(block.content) ? block.content : [];
-         const renderListItems = (columnItems: any[]) => (
-            columnItems.map((item, index) => (
-               <View key={`${index}-${String(item)}`} style={[styles.listItem, compactListItemStyle]}>
-                  <Text style={[styles.bullet, compactBulletStyle]}>•</Text>
-                  <Text style={[styles.listText, scaledBlockStyles, compactListStyle]}>{item}</Text>
-               </View>
-            ))
-         );
+
+         const renderListItems = (columnItems: any[]) =>
+            columnItems.map((item, index) => {
+               const itemText =
+                  typeof item === 'string'
+                     ? item
+                     : typeof item === 'number' || typeof item === 'boolean'
+                        ? String(item)
+                        : JSON.stringify(item);
+
+               return (
+                  <View
+                     key={`${index}-${itemText}`}
+                     style={[styles.listItem, compactListItemStyle]}
+                  >
+                     <View
+                        style={[
+                           styles.bulletDot,
+                           compactBulletStyle,
+                           {
+                              backgroundColor:
+                                 (scaledBlockStyles as any)?.color || '#333',
+                           },
+                        ]}
+                     />
+
+                     <Text
+                        style={[
+                           styles.listText,
+                           scaledBlockStyles,
+                           compactListStyle,
+                        ]}
+                     >
+                        {itemText}
+                     </Text>
+                  </View>
+               );
+            });
+
          return (
             <View style={[compactBlockSpacing, scaledBlockStyles]} key={key}>
                {renderListItems(items)}
             </View>
          );
+      }
       case 'divider':
          return <View style={[styles.divider, scaledBlockStyles]} key={key} />;
       case 'image':
@@ -442,7 +474,7 @@ const BusinessPlanRenderer = forwardRef<ScrollView, BusinessPlanRendererProps>((
                } else if (block.type === 'list' && Array.isArray(block.content)) {
                   html += `<div class="list-container">`;
                   block.content.forEach(item => {
-                     html += `<div class="list-item"><span class="list-bullet">•</span><span>${item}</span></div>`;
+                     html += `<div class="list-item"><span class="list-bullet">вЂў</span><span>${item}</span></div>`;
                   });
                   html += `</div>`;
                } else if (block.type === 'divider') {
@@ -680,7 +712,7 @@ const BusinessPlanRenderer = forwardRef<ScrollView, BusinessPlanRendererProps>((
 
                   {isLoadingThisSection && (
                      Array.from({ length: remainingCount }).map((_, index) => (
-                     <MotiView
+                        <MotiView
                            key={`skeleton-${index}`}
                            from={{ opacity: 0.3 }}
                            animate={{ opacity: 0.6 }}
@@ -708,7 +740,7 @@ const BusinessPlanRenderer = forwardRef<ScrollView, BusinessPlanRendererProps>((
 
                   {hasMore && !isLoadingThisSection && (
                      <TouchableOpacity
-                           style={[styles.loadMoreButton, { backgroundColor: palette.chip, borderColor: palette.border }]}
+                        style={[styles.loadMoreButton, { backgroundColor: palette.chip, borderColor: palette.border }]}
                         onPress={() => handleLoadMore(section.id, sectionPages.length)}
                      >
                         <Text style={[styles.loadMoreText, { color: palette.text }]}>
@@ -742,28 +774,13 @@ const BusinessPlanRenderer = forwardRef<ScrollView, BusinessPlanRendererProps>((
             </View>
          )}
 
-         <View style={[styles.planHero, { backgroundColor: palette.heroCard, borderColor: palette.border }]}>
-            <Text style={[styles.planHeroEyebrow, { color: palette.eyebrow }]}>Business plan</Text>
-            <Text style={[styles.planHeroTitle, { color: palette.text }]}>
+         <View style={styles.inlineHeader}>
+            <Text style={[styles.inlineHeaderTitle, { color: palette.text }]}>
                {activeCompany?.businessName || businessPlan.metadata.business_name}
             </Text>
-            <Text style={[styles.planHeroBody, { color: palette.muted }]}>
-               Tap any page preview to open the editor. Export your full plan from the menu.
+            <Text style={[styles.inlineHeaderSubtitle, { color: palette.muted }]}>
+               {businessPlan.presentation?.pages?.length ?? 0} pages · {businessPlan.presentation?.sections?.length ?? 0} sections
             </Text>
-            <View style={styles.planHeroStats}>
-               <View style={[styles.planHeroPill, { backgroundColor: palette.chip, borderColor: palette.border }]}>
-                  <Text style={[styles.planHeroPillValue, { color: palette.text }]}>
-                     {businessPlan.presentation?.pages?.length ?? 0}
-                  </Text>
-                  <Text style={[styles.planHeroPillLabel, { color: palette.muted }]}>Pages</Text>
-               </View>
-               <View style={[styles.planHeroPill, { backgroundColor: palette.chip, borderColor: palette.border }]}>
-                  <Text style={[styles.planHeroPillValue, { color: palette.text }]}>
-                     {businessPlan.presentation?.sections?.length ?? 0}
-                  </Text>
-                  <Text style={[styles.planHeroPillLabel, { color: palette.muted }]}>Sections</Text>
-               </View>
-            </View>
          </View>
 
          <View style={styles.topActions} pointerEvents="box-none">
@@ -821,7 +838,7 @@ function getRendererPalette(isDark: boolean) {
       eyebrow: isDark ? 'rgba(229,231,235,0.62)' : '#64748B',
       card: isDark ? 'rgba(15,23,42,0.84)' : 'rgba(255,255,255,0.92)',
       heroCard: isDark ? 'rgba(15,23,42,0.82)' : 'rgba(255,255,255,0.92)',
-      sectionCard: isDark ? 'rgba(15,23,42,0.56)' : 'rgba(255,255,255,0.72)',
+      sectionCard: isDark ? 'rgba(15,23,42,0.32)' : 'rgba(255,255,255,0.54)',
       chip: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.045)',
       border: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(15,23,42,0.10)',
       pageBorder: isDark ? 'rgba(255,255,255,0.14)' : 'rgba(15,23,42,0.12)',
@@ -839,66 +856,36 @@ const styles = StyleSheet.create({
       flex: 1,
    },
    scrollContent: {
-      paddingTop: 14,
-      paddingBottom: 15,
+      paddingTop: 8,
+      paddingBottom: 28,
       paddingHorizontal: 12,
    },
-   planHero: {
-      marginBottom: 18,
-      borderRadius: 28,
-      borderWidth: 1,
-      padding: 18,
-      gap: 10,
+   inlineHeader: {
+      marginBottom: 10,
    },
-   planHeroEyebrow: {
-      fontSize: 11,
-      fontWeight: '800',
-      letterSpacing: 1.2,
-      textTransform: 'uppercase',
-   },
-   planHeroTitle: {
-      fontSize: 30,
-      lineHeight: 34,
+   inlineHeaderTitle: {
+      fontSize: 18,
+      lineHeight: 22,
       fontWeight: '900',
    },
-   planHeroBody: {
-      fontSize: 13,
-      lineHeight: 20,
-   },
-   planHeroStats: {
-      flexDirection: 'row',
-      gap: 10,
-      marginTop: 2,
-   },
-   planHeroPill: {
-      flex: 1,
-      borderRadius: 18,
-      borderWidth: 1,
-      padding: 12,
-   },
-   planHeroPillValue: {
-      fontSize: 20,
-      fontWeight: '900',
-   },
-   planHeroPillLabel: {
-      marginTop: 2,
+   inlineHeaderSubtitle: {
+      marginTop: 4,
       fontSize: 12,
-      fontWeight: '700',
+      lineHeight: 18,
+      fontWeight: '600',
    },
    sectionContainer: {
-      marginBottom: 18,
-      borderRadius: 28,
-      borderWidth: 1,
-      paddingTop: 16,
-      paddingBottom: 6,
+      marginBottom: 14,
+      paddingTop: 20,
+      paddingBottom: 2,
    },
    sectionHeaderRow: {
       flexDirection: 'row',
       alignItems: 'flex-start',
       justifyContent: 'space-between',
       gap: 12,
-      paddingHorizontal: 16,
-      marginBottom: 16,
+      paddingHorizontal: 0,
+      marginBottom: 8,
    },
    sectionEyebrow: {
       fontSize: 10,
@@ -908,8 +895,8 @@ const styles = StyleSheet.create({
       marginBottom: 4,
    },
    sectionHeader: {
-      fontSize: 22,
-      lineHeight: 26,
+      fontSize: 18,
+      lineHeight: 22,
       fontWeight: '900',
    },
    sectionCount: {
@@ -918,12 +905,15 @@ const styles = StyleSheet.create({
       paddingHorizontal: 10,
       paddingVertical: 6,
    },
-   pagesRow: {},
+   pagesRow: {
+      gap: 10,
+   },
    pagesWrapper: {},
    pageWrapper: {
       alignItems: 'center',
-      marginBottom: 14,
-      borderRadius: 18
+      marginBottom: 12,
+      borderRadius: 20,
+      overflow: "hidden"
    },
    pageGradientOverlay: {
       position: 'absolute',
@@ -935,10 +925,11 @@ const styles = StyleSheet.create({
       backgroundColor: 'transparent',
    },
    pageContainer: {
-      width: '92%',
+      width: '90%',
       position: 'relative',
       overflow: "hidden",
-      borderRadius: 24,
+      borderRadius: 20,
+      marginTop: 20,
       borderWidth: 1,
       borderColor: '#e8e8e8',
    },
@@ -952,8 +943,9 @@ const styles = StyleSheet.create({
    },
    page: {
       backgroundColor: '#ffffff',
-      padding: 20,
-      height: 430,
+      padding: 16,
+      minHeight: 420,
+      height: 500,
       overflow: "hidden",
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 2 },
@@ -1041,10 +1033,10 @@ const styles = StyleSheet.create({
    pageSubtitle: {
       fontSize: 13,
       color: '#666',
-      marginBottom: 16,
+      marginBottom: 12,
    },
    section: {
-      marginBottom: 16,
+      marginBottom: 12,
    },
    sectionTitle: {
       fontSize: 15,
@@ -1177,6 +1169,15 @@ const styles = StyleSheet.create({
    bullet: {
       marginRight: 8,
       fontSize: 16,
+      fontWeight: '900',
+   },
+   bulletDot: {
+      width: 3,
+      height: 3,
+      borderRadius: 999,
+      backgroundColor: '#333',
+      marginTop: 6,
+      marginRight: 8,
    },
    listText: {
       fontSize: 14,
@@ -1202,7 +1203,7 @@ const styles = StyleSheet.create({
    },
    imagePlaceholder: {
       alignItems: 'center',
-      padding: 20,
+      padding: 16,
    },
    imageText: {
       fontSize: 16,
@@ -1243,7 +1244,7 @@ const styles = StyleSheet.create({
       height: 480,
       backgroundColor: 'rgba(255, 255, 255, 0.1)',
       borderRadius: 18,
-      padding: 20,
+      padding: 16,
       borderWidth: 2,
       borderColor: 'rgba(255, 255, 255, 0.1)',
    },
@@ -1346,3 +1347,8 @@ const styles = StyleSheet.create({
 });
 
 export default BusinessPlanRenderer
+
+
+
+
+

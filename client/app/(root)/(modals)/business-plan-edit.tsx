@@ -33,10 +33,12 @@ import { PageBlock } from '../(tabs)/(dashboard)/components/Content';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BusinessPlanTemplate } from '@/types/business-plan.types';
-import { useActiveCompany, useCompanyAdditionalData, useUpdateCompanyAdditionalData } from '@/hooks/useCompanyQueries';
+import { useActiveCompany, useCompanyAdditionalData } from '@/hooks/useCompanyQueries';
 import { useToast } from '@/components/ui/Toast/Toast';
 import { useIsKeyboardVisible } from '@/hooks/useIsKeyboardVisible';
 import { useSettings } from '@/lib/settings-context';
+import { companyService } from '@/services/company.service';
+import type { SupportedPlanLanguage } from '@/types/company.types';
 
 const { height } = Dimensions.get('window');
 
@@ -81,7 +83,10 @@ export default function EditPage() {
    const params = useLocalSearchParams<{ pageIndex: string }>();
    const { data: activeCompany } = useActiveCompany();
    const { data: companyAdditionalData, isLoading } = useCompanyAdditionalData(activeCompany?.id);
-   const updateCompanyData = useUpdateCompanyAdditionalData();
+   const selectedLanguage = settings.language as SupportedPlanLanguage;
+   const localizedPlan = selectedLanguage === 'en'
+      ? companyAdditionalData?.business_plan
+      : companyAdditionalData?.business_plan_translations?.[selectedLanguage] || companyAdditionalData?.business_plan;
 
    const pageIndex = parseInt(params.pageIndex);
    const companyId = activeCompany?.id;
@@ -104,6 +109,8 @@ export default function EditPage() {
    const [captionInput, setCaptionInput] = useState('');
    const [localListItems, setLocalListItems] = useState<{ id: string; text: string; }[]>([]);
 
+   const KEYBOARD_TOOLBAR_EXTRA_OFFSET = 10;
+
    const openListMenu = () => {
       setIsListMenuVisible(true);
    };
@@ -115,10 +122,10 @@ export default function EditPage() {
 
 
    useEffect(() => {
-      if (companyAdditionalData?.business_plan) {
-         setCurrentPlan(companyAdditionalData.business_plan as BusinessPlanTemplate);
+      if (localizedPlan) {
+         setCurrentPlan(localizedPlan as BusinessPlanTemplate);
       }
-   }, [companyAdditionalData]);
+   }, [localizedPlan]);
 
    useEffect(() => {
       const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -156,14 +163,14 @@ export default function EditPage() {
 
          if (blockRef && !hasScrolledForBlock.current.get(selectedBlock.id)) {
             setTimeout(() => {
-                     blockRef.measureLayout(
-                        scrollViewRef.current as any,
-                        (x: number, y: number, width: number, height: number) => {
-                           scrollViewRef.current?.scrollTo({
-                              y: Math.max(0, y - (insets.top + 104)),
-                              animated: true,
-                           });
-                           hasScrolledForBlock.current.set(selectedBlock.id, true);
+               blockRef.measureLayout(
+                  scrollViewRef.current as any,
+                  (x: number, y: number, width: number, height: number) => {
+                     scrollViewRef.current?.scrollTo({
+                        y: Math.max(0, y - (insets.top + 104)),
+                        animated: true,
+                     });
+                     hasScrolledForBlock.current.set(selectedBlock.id, true);
                   },
                   () => { }
                );
@@ -745,10 +752,18 @@ export default function EditPage() {
             updatedAt: new Date().toISOString()
          };
 
-         await updateCompanyData.mutateAsync({
-            companyId,
-            data: planToSave
-         });
+         if (selectedLanguage === 'en') {
+            await companyService.patchAdditionalData(companyId, {
+               business_plan: planToSave,
+            });
+         } else {
+            await companyService.patchAdditionalData(companyId, {
+               business_plan_translations: {
+                  ...(companyAdditionalData?.business_plan_translations || {}),
+                  [selectedLanguage]: planToSave,
+               },
+            });
+         }
 
          setHasUnsavedChanges(false);
       } catch (error: any) {
@@ -871,8 +886,14 @@ export default function EditPage() {
             const renderListItems = (columnItems: any[]) => (
                columnItems.map((item, index) => (
                   <View key={`${index}-${String(item)}`} style={styles.listItem}>
-                     <Text style={styles.bullet}>•</Text>
-                     <Text style={[styles.listText, compactStyles]}>{item}</Text>
+                     <View style={[styles.bulletDot, { backgroundColor: (compactStyles as any)?.color || '#333' }]} />
+                     <Text style={[styles.listText, compactStyles]}>
+                        {typeof item === 'string'
+                           ? item
+                           : typeof item === 'number' || typeof item === 'boolean'
+                              ? String(item)
+                              : JSON.stringify(item)}
+                     </Text>
                   </View>
                ))
             );
@@ -1352,8 +1373,8 @@ export default function EditPage() {
 
    const shouldShowToolsBar = toolsVisible && (!isKeyboardVisible || Boolean(selectedBlock));
    const toolsBarBottom = isKeyboardVisible
-      ? Math.max(keyboardHeight - insets.bottom - 18, 2)
-      : 2 + insets.bottom;
+      ? Math.max(KEYBOARD_TOOLBAR_EXTRA_OFFSET, 8)
+      : 8 + insets.bottom;
 
    return (
       <>
@@ -1393,7 +1414,7 @@ export default function EditPage() {
                </View>
 
                <KeyboardAvoidingView
-                  enabled={false}
+                  enabled={true}
                   behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                   keyboardVerticalOffset={0}
                   style={{ flex: 1 }}
@@ -1406,7 +1427,7 @@ export default function EditPage() {
                               style={styles.contentArea}
                               contentContainerStyle={{
                                  paddingTop: insets.top + 84,
-                                 paddingBottom: (shouldShowToolsBar ? 118 : 20) + insets.bottom + (isKeyboardVisible ? keyboardHeight : 0),
+                                 paddingBottom: shouldShowToolsBar ? 126 + insets.bottom : 20 + insets.bottom,
                               }}
                               keyboardShouldPersistTaps="handled"
                               keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
@@ -1812,6 +1833,15 @@ const styles = StyleSheet.create({
    bullet: {
       marginRight: 4,
       fontSize: 10,
+      fontWeight: '900',
+   },
+   bulletDot: {
+      width: 3,
+      height: 3,
+      borderRadius: 999,
+      backgroundColor: '#333',
+      marginTop: 4,
+      marginRight: 6,
    },
    listText: {
       fontSize: 9,
@@ -2166,3 +2196,5 @@ const styles = StyleSheet.create({
       minHeight: 50,
    },
 });
+
+
